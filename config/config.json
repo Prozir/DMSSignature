@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "signature-web-part-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/signatureWebPart/SignatureWebPartWebPart.js",
+          "manifest": "./src/webparts/signatureWebPart/SignatureWebPartWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "SignatureWebPartWebPartStrings": "lib/webparts/signatureWebPart/loc/{locale}.js"
+  }
+}

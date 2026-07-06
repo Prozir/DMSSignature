@@ -1,0 +1,238 @@
+@import '~@fluentui/react/dist/sass/References.scss';
+
+.signatureWebPart {
+  color: "[theme:bodyText, default: #323130]";
+  color: var(--bodyText);
+  font-family: $ms-font-family-fallbacks;
+
+  button,
+  .fileButton {
+    align-items: center;
+    background: #2563eb;
+    border: 1px solid #1d4ed8;
+    border-radius: 6px;
+    color: #ffffff;
+    cursor: pointer;
+    display: inline-flex;
+    font-size: 14px;
+    font-weight: 600;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 14px;
+
+    &:disabled {
+      background: #cbd5e1;
+      border-color: #cbd5e1;
+      color: #64748b;
+      cursor: not-allowed;
+    }
+  }
+
+  input[type='range'] {
+    width: 100%;
+  }
+
+  &.teams {
+    font-family: $ms-font-family-fallbacks;
+  }
+}
+
+.header {
+  align-items: flex-start;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding-bottom: 18px;
+
+  h2 {
+    font-size: 24px;
+    line-height: 1.2;
+    margin: 0 0 6px;
+  }
+
+  p {
+    color: #475569;
+    line-height: 1.5;
+    margin: 0;
+  }
+}
+
+.fileButton {
+  flex: 0 0 auto;
+
+  input {
+    display: none;
+  }
+}
+
+.workspace {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  padding-top: 20px;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px;
+
+  h3 {
+    font-size: 16px;
+    line-height: 1.3;
+    margin: 0 0 12px;
+  }
+}
+
+.signatureCanvas {
+  background: #ffffff;
+  border: 1px dashed #94a3b8;
+  border-radius: 6px;
+  height: 180px;
+  width: 100%;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+
+  button:last-child {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+}
+
+.rangeLabel {
+  color: #334155;
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.helpText {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 10px 0 0;
+}
+
+.downloadButton {
+  width: 100%;
+}
+
+.previewArea {
+  min-width: 0;
+}
+
+.previewToolbar {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+
+  > span {
+    color: #334155;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.pageControls {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+
+  span {
+    color: #475569;
+    min-width: 56px;
+    text-align: center;
+  }
+
+  button {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+}
+
+.canvasWrap {
+  align-items: flex-start;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  min-height: 420px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 12px;
+  position: relative;
+  width: 100%;
+}
+
+.pdfCanvas {
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  cursor: crosshair;
+  display: block;
+  max-width: 100%;
+}
+
+.pageSurface {
+  display: inline-block;
+  max-width: 100%;
+  position: relative;
+}
+
+.signaturePreview {
+  pointer-events: none;
+  position: absolute;
+  z-index: 2;
+}
+
+.emptyState {
+  align-items: center;
+  color: #64748b;
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: absolute;
+  text-align: center;
+}
+
+.status {
+  color: #475569;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+@media (max-width: 780px) {
+  .header,
+  .previewToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .pageControls {
+    justify-content: space-between;
+  }
+}
