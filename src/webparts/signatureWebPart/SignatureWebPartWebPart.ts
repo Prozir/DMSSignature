@@ -10,10 +10,12 @@ import { IReadonlyTheme } from '@microsoft/sp-component-base';
 
 import * as strings from 'SignatureWebPartWebPartStrings';
 import SignatureWebPart from './components/SignatureWebPart';
-import { ISignatureWebPartProps } from './components/ISignatureWebPartProps';
+import type { ISignatureWebPartProps } from './components/ISignatureWebPartProps';
 
 export interface ISignatureWebPartWebPartProps {
   description: string;
+  siteUrl?: string;
+  taskListName?: string;
 }
 
 export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISignatureWebPartWebPartProps> {
@@ -22,14 +24,18 @@ export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISign
   private _environmentMessage: string = '';
 
   public render(): void {
-    const element: React.ReactElement<ISignatureWebPartProps> = React.createElement(
-      SignatureWebPart,
+    const element = React.createElement(
+      SignatureWebPart as React.ComponentType<ISignatureWebPartProps>,
       {
         description: this.properties.description,
         isDarkTheme: this._isDarkTheme,
         environmentMessage: this._environmentMessage,
         hasTeamsContext: !!this.context.sdks.microsoftTeams,
-        userDisplayName: this.context.pageContext.user.displayName
+        userDisplayName: this.context.pageContext.user.displayName,
+        siteUrl: this.properties.siteUrl,
+        taskListName: this.properties.taskListName,
+        webAbsoluteUrl: this.context.pageContext.web.absoluteUrl,
+        spHttpClient: this.context.spHttpClient
       }
     );
 
@@ -110,6 +116,12 @@ export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISign
               groupFields: [
                 PropertyPaneTextField('description', {
                   label: strings.DescriptionFieldLabel
+                }),
+                PropertyPaneTextField('siteUrl', {
+                  label: strings.SiteUrlFieldLabel
+                }),
+                PropertyPaneTextField('taskListName', {
+                  label: strings.TaskListNameFieldLabel
                 })
               ]
             }

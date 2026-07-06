@@ -3,7 +3,10 @@ import SignatureCanvas from 'react-signature-canvas';
 import { PDFDocument } from 'pdf-lib';
 import * as pdfJsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+import { SPHttpClient } from '@microsoft/sp-http';
+import { Dialog, DialogFooter, DefaultButton, PrimaryButton } from '@fluentui/react';
 import styles from './SignatureWebPart.module.scss';
+import DocumentsList, { IDocumentListItem } from './DocumentsList';
 import type { ISignatureWebPartProps } from './ISignatureWebPartProps';
 
 interface ISignaturePlacement {
@@ -32,6 +35,10 @@ interface ISignatureWebPartState {
   isLoading: boolean;
   isRendering: boolean;
   statusMessage: string;
+  documents: IDocumentListItem[];
+  isDocumentsLoading: boolean;
+  isDialogOpen: boolean;
+  activeDocument?: IDocumentListItem;
 }
 
 export default class SignatureWebPart extends React.Component<ISignatureWebPartProps, ISignatureWebPartState> {
@@ -52,14 +59,29 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       signatureWidth: 110,
       isLoading: false,
       isRendering: false,
-      statusMessage: 'Upload a PDF to begin.'
+      statusMessage: 'Loading documents from SharePoint... waiting for selection.',
+      documents: [],
+      isDocumentsLoading: false,
+      isDialogOpen: false
     };
   }
 
   public componentDidUpdate(
-    _previousProps: ISignatureWebPartProps,
+    previousProps: ISignatureWebPartProps,
     previousState: ISignatureWebPartState
   ): void {
+    if (
+      previousProps.siteUrl !== this.props.siteUrl ||
+      previousProps.taskListName !== this.props.taskListName
+    ) {
+      this._loadDocumentListFromSharePoint().catch(() => {
+        this.setState({
+          isDocumentsLoading: false,
+          statusMessage: 'The SharePoint documents could not be loaded.'
+        });
+      });
+    }
+
     if (
       previousState.pdfDocument !== this.state.pdfDocument ||
       previousState.currentPageIndex !== this.state.currentPageIndex
@@ -75,6 +97,12 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
 
   public componentDidMount(): void {
     window.addEventListener('resize', this._handleWindowResize);
+    this._loadDocumentListFromSharePoint().catch(() => {
+      this.setState({
+        isDocumentsLoading: false,
+        statusMessage: 'The SharePoint documents could not be loaded.'
+      });
+    });
   }
 
   public componentWillUnmount(): void {
@@ -97,7 +125,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       signatureAspectRatio,
       signatureDataUrl,
       signatureWidth,
-      statusMessage
     } = this.state;
 
     const canPlaceSignature: boolean = !!pageSize && signatureDataUrl.length > 0 && !isRendering;
@@ -106,164 +133,127 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
 
     return (
       <section className={`${styles.signatureWebPart} ${this.props.hasTeamsContext ? styles.teams : ''}`}>
-        <div className={styles.header}>
-          <div>
-            <h2>PDF signature</h2>
-            <p>Upload a PDF, draw a signature, click the page to place it, then download the signed copy.</p>
-          </div>
-          <label className={styles.fileButton}>
-            <input type="file" accept="application/pdf" onChange={this._handlePdfUpload} />
-            Upload PDF
-          </label>
+        <div className={styles.listContainer}>
+          <DocumentsList
+            items={this.state.documents}
+            isLoading={this.state.isDocumentsLoading}
+            onOpenItem={this._openDocument}
+          />
         </div>
 
-        <div className={styles.workspace}>
-          <aside className={styles.controls}>
-            <div className={styles.panel}>
-              <h3>Signature</h3>
-              <SignatureCanvas
-                ref={this._signatureRef}
-                penColor="#111827"
-                clearOnResize={false}
-                canvasProps={{
-                  className: styles.signatureCanvas,
-                  'aria-label': 'Draw signature'
-                }}
-                onEnd={this._captureSignature}
-              />
-              <div className={styles.buttonRow}>
-                <button type="button" onClick={this._captureSignature}>Use signature</button>
-                <button type="button" onClick={this._clearSignature}>Clear</button>
-              </div>
-            </div>
-
-            <div className={styles.panel}>
-              <h3>Placement</h3>
-              <label className={styles.rangeLabel} htmlFor="signatureWidth">
-                Width: {signatureWidth}px
-              </label>
-              <input
-                id="signatureWidth"
-                type="range"
-                min="60"
-                max="220"
-                step="10"
-                value={signatureWidth}
-                onChange={this._handleSignatureWidthChange}
-              />
-              <p className={styles.helpText}>
-                {canPlaceSignature ? 'Click the PDF preview where the top-left of the signature should appear.' : 'Draw a signature and load a PDF before placing it.'}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              className={styles.downloadButton}
-              disabled={!canDownload}
-              onClick={this._downloadSignedPdf}
-            >
-              Download signed PDF
-            </button>
-          </aside>
-
-          <main className={styles.previewArea}>
-            <div className={styles.previewToolbar}>
-              <span>{fileName || 'No PDF selected'}</span>
-              <div className={styles.pageControls}>
-                <button type="button" disabled={currentPageIndex === 0 || pageCount === 0} onClick={this._goToPreviousPage}>
-                  Previous
-                </button>
-                <span>{pageCount > 0 ? `${currentPageIndex + 1} / ${pageCount}` : '0 / 0'}</span>
-                <button type="button" disabled={currentPageIndex >= pageCount - 1 || pageCount === 0} onClick={this._goToNextPage}>
-                  Next
-                </button>
-              </div>
-            </div>
-
-            <div className={styles.canvasWrap} ref={this._canvasWrapRef}>
-              <div className={styles.pageSurface}>
-                <canvas
-                  ref={this._previewCanvasRef}
-                  className={styles.pdfCanvas}
-                  onClick={this._handlePreviewClick}
-                />
-                {placement && placement.pageIndex === currentPageIndex && signatureDataUrl && (
-                  <img
-                    alt="Signature placement"
-                    className={styles.signaturePreview}
-                    src={signatureDataUrl}
-                    style={{
-                      left: `${placement.x}px`,
-                      top: `${placement.y}px`,
-                      width: `${placement.width}px`,
-                      height: `${signatureHeight}px`
+        <Dialog
+          hidden={!this.state.isDialogOpen}
+          onDismiss={this._closeDialog}
+          dialogContentProps={{
+            title: this.state.activeDocument ? `Sign ${this.state.activeDocument.documentName || this.state.activeDocument.title || 'document'}` : 'Sign document'
+          }}
+          modalProps={{ 
+            isBlocking: true,
+            className: styles.dialogModal
+          }}
+           minWidth="70vw"
+           maxWidth="1100px"
+        >
+          <div className={styles.dialogContent}>
+            <div className={styles.workspace}>
+              <aside className={styles.controls}>
+                <div className={styles.panel}>
+                  <h3>Signature</h3>
+                  <SignatureCanvas
+                    ref={this._signatureRef}
+                    penColor="#111827"
+                    clearOnResize={false}
+                    canvasProps={{
+                      className: styles.signatureCanvas,
+                      'aria-label': 'Draw signature'
                     }}
+                    onEnd={this._captureSignature}
                   />
-                )}
-              </div>
-              {(isLoading || isRendering || pageCount === 0) && (
-                <div className={styles.emptyState}>{isLoading || isRendering ? 'Working...' : 'Upload a PDF to preview it here.'}</div>
-              )}
-            </div>
+                  <div className={styles.buttonRow}>
+                    <button type="button" onClick={this._captureSignature}>Use signature</button>
+                    <button type="button" onClick={this._clearSignature}>Clear</button>
+                  </div>
+                </div>
 
-            <div className={styles.status} role="status">{statusMessage}</div>
-          </main>
-        </div>
+                <div className={styles.panel}>
+                  <h3>Placement</h3>
+                  <label className={styles.rangeLabel} htmlFor="signatureWidth">
+                    Width: {signatureWidth}px
+                  </label>
+                  <input
+                    id="signatureWidth"
+                    type="range"
+                    min="20"
+                    max="220"
+                    step="10"
+                    value={signatureWidth}
+                    onChange={this._handleSignatureWidthChange}
+                  />
+                  <p className={styles.helpText}>
+                    {canPlaceSignature ? 'Click the PDF preview where the top-left of the signature should appear.' : 'Draw a signature.'}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className={styles.downloadButton}
+                  disabled={!canDownload}
+                  onClick={this._downloadSignedPdf}
+                >
+                  Download signed PDF
+                </button>
+              </aside>
+
+              <main className={styles.previewArea}>
+                <div className={styles.previewToolbar}>
+                  <span>{fileName || 'No PDF selected'}</span>
+                  <div className={styles.pageControls}>
+                    <button type="button" disabled={currentPageIndex === 0 || pageCount === 0} onClick={this._goToPreviousPage}>
+                      Previous
+                    </button>
+                    <span>{pageCount > 0 ? `${currentPageIndex + 1} / ${pageCount}` : '0 / 0'}</span>
+                    <button type="button" disabled={currentPageIndex >= pageCount - 1 || pageCount === 0} onClick={this._goToNextPage}>
+                      Next
+                    </button>
+                  </div>
+                </div>
+
+                <div className={styles.canvasWrap} ref={this._canvasWrapRef}>
+                  <div className={styles.pageSurface}>
+                    <canvas
+                      ref={this._previewCanvasRef}
+                      className={styles.pdfCanvas}
+                      onClick={this._handlePreviewClick}
+                    />
+                    {placement && placement.pageIndex === currentPageIndex && signatureDataUrl && (
+                      <img
+                        alt="Signature placement"
+                        className={styles.signaturePreview}
+                        src={signatureDataUrl}
+                        style={{
+                          left: `${placement.x}px`,
+                          top: `${placement.y}px`,
+                          width: `${placement.width}px`,
+                          height: `${signatureHeight}px`
+                        }}
+                      />
+                    )}
+                  </div>
+                  {(isLoading || isRendering || pageCount === 0) && (
+                    <div className={styles.emptyState}>{isLoading || isRendering ? 'Working...' : 'No document available from SharePoint.'}</div>
+                  )}
+                </div>
+              </main>
+            </div>
+          </div>
+          <DialogFooter>
+            <PrimaryButton text="Close" onClick={this._closeDialog} />
+            <DefaultButton text="Cancel" onClick={this._closeDialog} />
+          </DialogFooter>
+        </Dialog>
       </section>
     );
   }
-
-  private readonly _handlePdfUpload = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file: File | undefined = event.target.files && event.target.files.length > 0
-      ? event.target.files[0]
-      : undefined;
-
-    if (!file) {
-      return;
-    }
-
-    this.setState({
-      isLoading: true,
-      statusMessage: 'Loading PDF...',
-      placement: undefined
-    });
-
-    const input: HTMLInputElement = event.target;
-
-    try {
-      const buffer: ArrayBuffer = await this._readFileAsArrayBuffer(file);
-      const bytes: Uint8Array = new Uint8Array(buffer);
-      const loadingTask = pdfJsLib.getDocument({
-        data: new Uint8Array(bytes),
-        disableWorker: true
-      });
-      const pdfDocument: unknown = await loadingTask.promise;
-      const pageCount: number = (pdfDocument as { numPages: number }).numPages;
-
-      this.setState({
-        fileName: file.name,
-        pdfBytes: bytes,
-        pdfDocument,
-        pageCount,
-        currentPageIndex: 0,
-        isLoading: false,
-        statusMessage: `Loaded ${pageCount} page${pageCount === 1 ? '' : 's'}.`
-      });
-    } catch (error) {
-      this.setState({
-        fileName: '',
-        pdfBytes: undefined,
-        pdfDocument: undefined,
-        pageCount: 0,
-        pageSize: undefined,
-        placement: undefined,
-        isLoading: false,
-        statusMessage: `Please choose a valid PDF file. ${this._getErrorMessage(error)}`
-      });
-    } finally {
-      input.value = '';
-    }
-  };
 
   private readonly _captureSignature = (): void => {
     const signaturePad: SignatureCanvas | null = this._signatureRef.current;
@@ -384,12 +374,357 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }, 150);
   };
 
+  private readonly _openDocument = async (item: IDocumentListItem): Promise<void> => {
+    if (!item.attachmentServerRelativeUrl) {
+      this.setState({
+        statusMessage: 'The selected document does not contain a PDF attachment.'
+      });
+      return;
+    }
+
+    this.setState({
+      activeDocument: item,
+      isDialogOpen: true,
+      fileName: '',
+      pdfBytes: undefined,
+      pdfDocument: undefined,
+      pageCount: 0,
+      currentPageIndex: 0,
+      pageSize: undefined,
+      placement: undefined,
+      signatureDataUrl: '',
+      isLoading: true,
+      statusMessage: 'Loading PDF for selected document...'
+    });
+
+    await this._loadDocumentFromSharePoint(item.id, item.attachmentServerRelativeUrl);
+  };
+
+  private readonly _closeDialog = (): void => {
+    this.setState({
+      isDialogOpen: false,
+      activeDocument: undefined,
+      statusMessage: 'Document viewer closed.'
+    });
+  };
+
+  private _getListApiPath(listName: string, webAbsoluteUrl: string): { apiPath: string; displayName: string } {
+    const trimmed = listName.trim();
+    const normalizeServerRelativeUrl = (url: string): string => url.replace(/ /g, '%20');
+
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const listUrl = new URL(trimmed);
+        const serverRelativeUrl = listUrl.pathname;
+        return {
+          apiPath: `web/GetList('${normalizeServerRelativeUrl(serverRelativeUrl).replace(/'/g, "''")}')`,
+          displayName: serverRelativeUrl.split('/').pop() || trimmed
+        };
+      } catch {
+        // fallback to title-based access
+      }
+    }
+
+    if (trimmed.indexOf('/') === 0) {
+      const serverRelativeUrl = normalizeServerRelativeUrl(trimmed);
+      return {
+        apiPath: `web/GetList('${serverRelativeUrl.replace(/'/g, "''")}')`,
+        displayName: serverRelativeUrl.split('/').pop() || trimmed
+      };
+    }
+
+    return {
+      apiPath: `web/lists/getbytitle('${trimmed.replace(/'/g, "''")}')`,
+      displayName: trimmed
+    };
+  }
+
+  private readonly _loadDocumentListFromSharePoint = async (): Promise<void> => {
+    const { siteUrl, taskListName, spHttpClient, webAbsoluteUrl } = this.props;
+    const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
+    const listName: string | undefined = taskListName ? taskListName.trim() : undefined;
+
+    if (!trimmedSiteUrl) {
+      this.setState({
+        statusMessage: 'The site URL is not configured.',
+        isDocumentsLoading: false
+      });
+      return;
+    }
+
+    if (!listName) {
+      this.setState({
+        statusMessage: 'The SharePoint list name is not configured.',
+        isDocumentsLoading: false
+      });
+      return;
+    }
+
+    this.setState({
+      isDocumentsLoading: true,
+      statusMessage: 'Loading signed documents from SharePoint...',
+      documents: []
+    });
+
+    const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
+    const listInfo = this._getListApiPath(listName, trimmedSiteUrl);
+
+    try {
+      const requestUrl = `${apiBaseUrl}/_api/${listInfo.apiPath}/items?$select=Id,Title,DocumentName,DocumentNumber,Trader,AccountCode,ApprovalStatus,Created,Modified,AttachmentFiles&$expand=AttachmentFiles&$top=500`;
+      const itemsResponse = await spHttpClient.get(
+        requestUrl,
+        SPHttpClient.configurations.v1,
+        {
+          headers: {
+            Accept: 'application/json;odata=nometadata'
+          }
+        }
+      );
+
+      if (!itemsResponse.ok) {
+        throw new Error(`Unable to query the list. Status ${itemsResponse.status} for ${requestUrl}`);
+      }
+
+      const itemsJson = await itemsResponse.json();
+
+      interface ISharePointDocumentItem {
+        Id: number;
+        Title?: string;
+        DocumentName?: string;
+        DocumentNumber?: string;
+        Trader?: string;
+        AccountCode?: string;
+        ApprovalStatus?: string;
+        Created?: string;
+        Modified?: string;
+        AttachmentFiles?: Array<{ FileName: string; ServerRelativeUrl: string }>;
+      }
+
+      const items = (itemsJson && (itemsJson.value as Array<ISharePointDocumentItem>)) || [];
+
+      const documents: IDocumentListItem[] = items
+        .map((item: ISharePointDocumentItem) => {
+          const attachmentFiles: Array<{ FileName: string; ServerRelativeUrl: string }> =
+            item.AttachmentFiles || [];
+          let pdfAttachment: { FileName: string; ServerRelativeUrl: string } | undefined;
+
+          for (let i = 0; i < attachmentFiles.length; i++) {
+            const file = attachmentFiles[i];
+            const fileName = file.FileName.toLowerCase();
+            if (fileName.length > 4 && fileName.substr(fileName.length - 4) === '.pdf') {
+              pdfAttachment = file;
+              break;
+            }
+          }
+
+          if (!pdfAttachment && attachmentFiles.length > 0) {
+            pdfAttachment = attachmentFiles[0];
+          }
+
+          return {
+            id: item.Id,
+            title: item.Title,
+            documentName: item.DocumentName,
+            documentNumber: item.DocumentNumber,
+            trader: item.Trader,
+            accountCode: item.AccountCode,
+            approvalStatus: item.ApprovalStatus,
+            created: item.Created,
+            modified: item.Modified,
+            attachmentFileName: pdfAttachment ? pdfAttachment.FileName : undefined,
+            attachmentServerRelativeUrl: pdfAttachment ? pdfAttachment.ServerRelativeUrl : undefined
+          } as IDocumentListItem;
+        })
+        .filter((item: IDocumentListItem) => !!item.attachmentServerRelativeUrl);
+
+      this.setState({
+        documents,
+        isDocumentsLoading: false,
+        statusMessage: documents.length === 0
+          ? `No signed documents with PDF attachments were found in '${listName}'. Request URL: ${requestUrl}`
+          : 'Select a document to open for signature.'
+      });
+    } catch (error) {
+      this.setState({
+        documents: [],
+        isDocumentsLoading: false,
+        statusMessage: `The SharePoint documents could not be loaded. ${this._getErrorMessage(error)}`
+      });
+    }
+  };
+
+  private readonly _loadDocumentFromSharePoint = async (itemId?: number, attachmentRelativeUrl?: string): Promise<void> => {
+    const { siteUrl, taskListName, spHttpClient, webAbsoluteUrl } = this.props;
+    const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
+    const listName: string | undefined = taskListName ? taskListName.trim() : undefined;
+
+    if (!trimmedSiteUrl) {
+      this.setState({
+        statusMessage: 'The site URL is not configured.',
+        isLoading: false
+      });
+      return;
+    }
+
+    if (!listName) {
+      this.setState({
+        statusMessage: 'The SharePoint list name is not configured.',
+        isLoading: false
+      });
+      return;
+    }
+
+    this.setState({
+      isLoading: true,
+      statusMessage: 'Loading document from SharePoint... ',
+      placement: undefined
+    });
+
+    const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
+    const listTitle: string = listName.replace(/'/g, "''");
+
+    try {
+      let itemIdToUse = itemId;
+
+      if (itemIdToUse === undefined) {
+        const itemsResponse = await spHttpClient.get(
+          `${apiBaseUrl}/_api/web/lists/getbytitle('${listTitle}')/items?$select=Id,Title&$filter=Attachments eq true&$top=1`,
+          SPHttpClient.configurations.v1,
+          {
+            headers: {
+              Accept: 'application/json;odata=nometadata'
+            }
+          }
+        );
+
+        if (!itemsResponse.ok) {
+          throw new Error(`Unable to query the list. Status ${itemsResponse.status}`);
+        }
+
+        const itemsJson = await itemsResponse.json();
+        const items = (itemsJson && (itemsJson.value as Array<{ Id: number; Title?: string }>)) || [];
+
+        if (items.length === 0) {
+          this.setState({
+            fileName: '',
+            pdfBytes: undefined,
+            pdfDocument: undefined,
+            pageCount: 0,
+            pageSize: undefined,
+            placement: undefined,
+            isLoading: false,
+            statusMessage: `No items with attachments were found in the list '${listName}'.`
+          });
+          return;
+        }
+
+        itemIdToUse = items[0].Id;
+      }
+
+      let pdfAttachment: { FileName: string; ServerRelativeUrl: string } | undefined;
+
+      if (attachmentRelativeUrl) {
+        const fileName = attachmentRelativeUrl.substring(attachmentRelativeUrl.lastIndexOf('/') + 1);
+        pdfAttachment = {
+          FileName: fileName,
+          ServerRelativeUrl: attachmentRelativeUrl
+        };
+      } else {
+        const attachmentsResponse = await spHttpClient.get(
+          `${apiBaseUrl}/_api/web/lists/getbytitle('${listTitle}')/items(${itemIdToUse})/AttachmentFiles?$select=FileName,ServerRelativeUrl`,
+          SPHttpClient.configurations.v1,
+          {
+            headers: {
+              Accept: 'application/json;odata=nometadata'
+            }
+          }
+        );
+
+        if (!attachmentsResponse.ok) {
+          throw new Error(`Unable to read attachments. Status ${attachmentsResponse.status}`);
+        }
+
+        const attachmentsJson = await attachmentsResponse.json();
+        const attachmentFiles: Array<{ FileName: string; ServerRelativeUrl: string }> =
+          (attachmentsJson && attachmentsJson.value as Array<{ FileName: string; ServerRelativeUrl: string }>) || [];
+
+        for (let i = 0; i < attachmentFiles.length; i++) {
+          const file = attachmentFiles[i];
+          const fileName = file.FileName.toLowerCase();
+          if (fileName.length > 4 && fileName.substr(fileName.length - 4) === '.pdf') {
+            pdfAttachment = file;
+            break;
+          }
+        }
+
+        if (!pdfAttachment && attachmentFiles.length > 0) {
+          pdfAttachment = attachmentFiles[0];
+        }
+      }
+
+      if (!pdfAttachment) {
+        this.setState({
+          fileName: '',
+          pdfBytes: undefined,
+          pdfDocument: undefined,
+          pageCount: 0,
+          pageSize: undefined,
+          placement: undefined,
+          isLoading: false,
+          statusMessage: `No PDF attachment was found for item ${itemIdToUse}.`
+        });
+        return;
+      }
+
+      const fileResponse = await spHttpClient.get(
+        `${apiBaseUrl}/_api/web/GetFileByServerRelativeUrl('${pdfAttachment.ServerRelativeUrl}')/$value`,
+        SPHttpClient.configurations.v1,
+        {
+          headers: {
+            Accept: 'application/pdf'
+          }
+        }
+      );
+
+      if (!fileResponse.ok) {
+        throw new Error(`Unable to download file. Status ${fileResponse.status}`);
+      }
+
+      const arrayBuffer = await fileResponse.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      const loadingTask = pdfJsLib.getDocument({ data: bytes, disableWorker: true });
+      const pdfDocument = await loadingTask.promise;
+      const pageCount = (pdfDocument as { numPages: number }).numPages;
+
+      this.setState({
+        fileName: pdfAttachment.FileName,
+        pdfBytes: bytes,
+        pdfDocument,
+        pageCount,
+        currentPageIndex: 0,
+        isLoading: false,
+        statusMessage: `Loaded ${pageCount} page${pageCount === 1 ? '' : 's'} from SharePoint.`
+      });
+    } catch (error) {
+      this.setState({
+        fileName: '',
+        pdfBytes: undefined,
+        pdfDocument: undefined,
+        pageCount: 0,
+        pageSize: undefined,
+        placement: undefined,
+        isLoading: false,
+        statusMessage: `The SharePoint document could not be loaded. ${this._getErrorMessage(error)}`
+      });
+    }
+  };
+
   private readonly _downloadSignedPdf = async (): Promise<void> => {
     const { fileName, pdfBytes, placement, signatureDataUrl } = this.state;
     const canvas: HTMLCanvasElement | null = this._previewCanvasRef.current;
 
     if (!pdfBytes || !placement || !signatureDataUrl || !canvas) {
-      this.setState({ statusMessage: 'Upload a PDF, draw a signature, and place it before downloading.' });
+      this.setState({ statusMessage: 'Load a SharePoint PDF, draw a signature, and place it before downloading.' });
       return;
     }
 
@@ -479,22 +814,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   }
 
-  private _readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
-    return new Promise<ArrayBuffer>((resolve, reject) => {
-      const reader: FileReader = new FileReader();
-
-      reader.onload = (): void => {
-        if (reader.result instanceof ArrayBuffer) {
-          resolve(reader.result);
-          return;
-        }
-
-        reject(new Error('The selected file could not be read.'));
-      };
-      reader.onerror = (): void => reject(reader.error || new Error('The selected file could not be read.'));
-      reader.readAsArrayBuffer(file);
-    });
-  }
 
   private _getErrorMessage(error: unknown): string {
     return error instanceof Error && error.message

@@ -4,6 +4,7 @@
   color: "[theme:bodyText, default: #323130]";
   color: var(--bodyText);
   font-family: $ms-font-family-fallbacks;
+  padding: 16px;
 
   button,
   .fileButton {
@@ -77,17 +78,44 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 260px;
+  overflow-y: auto;
 }
 
 .panel {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 14px;
+  width: 100%;
+  box-sizing: border-box;
 
   h3 {
     font-size: 16px;
     line-height: 1.3;
     margin: 0 0 12px;
+  }
+}
+
+.listContainer {
+  width: 100%;
+  overflow-x: auto;
+  margin: 0;
+  padding: 0;
+
+  :global(.ms-DetailsList) {
+    width: 100% !important;
+  }
+
+  :global(.ms-DetailsList-headerWrapper) {
+    overflow: visible !important;
+  }
+
+  :global(.ms-DetailsList-contentWrapper) {
+    overflow: visible !important;
+  }
+
+  :global(.ms-List) {
+    width: 100% !important;
   }
 }
 
@@ -131,6 +159,8 @@
 
 .previewArea {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .previewToolbar {
@@ -176,9 +206,9 @@
   box-sizing: border-box;
   display: flex;
   justify-content: center;
-  min-height: 420px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  min-height: 300px;
+  flex: 1;
+  overflow: hidden;
   padding: 12px;
   position: relative;
   width: 100%;
@@ -234,5 +264,109 @@
 
   .pageControls {
     justify-content: space-between;
+  }
+}
+
+.dialogContent {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.dialogContent .workspace {
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.dialogModal {
+  box-sizing: border-box;
+}
+
+// Cap the dialog's overall height so something has to scroll internally
+// instead of the whole page growing.
+.dialogModal :global(.ms-Dialog-main) {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-height: 85vh;
+}
+
+// Content area (title body sits inside this) should NOT scroll as a whole —
+// only the inner PDF preview (.canvasWrap) scrolls. This is what keeps
+// the footer (Close/Cancel) always visible.
+.dialogModal :global(.ms-Dialog-content) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+// Wrapper Fluent renders around your dialogContentProps children.
+// If your installed Fluent version doesn't emit this class, replace with
+// ".ms-Dialog-content > *:not(.ms-DialogFooter)" instead.
+.dialogModal :global(.ms-Dialog-inner) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dialogModal :global(.ms-Dialog-topButton) {
+  flex-shrink: 0;
+}
+
+// Footer (Close/Cancel) stays pinned at the bottom, never shrinks,
+// never scrolls out of view.
+.dialogModal :global(.ms-DialogFooter) {
+  flex-shrink: 0;
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.controls,
+.previewArea {
+  min-width: 0;
+}
+
+.controls {
+  overflow-y: auto;
+}
+
+@media (max-width: 1024px) {
+  .dialogModal :global(.ms-Dialog-main) {
+    width: calc(100vw - 48px);
+    max-width: calc(100vw - 48px);
+  }
+}
+
+@media (max-width: 768px) {
+  .dialogModal :global(.ms-Dialog-main) {
+    width: calc(100vw - 32px);
+    max-width: calc(100vw - 32px);
+  }
+
+  .dialogContent .workspace {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .dialogModal :global(.ms-Dialog-main) {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
   }
 }

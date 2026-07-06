@@ -2,6 +2,8 @@ declare interface ISignatureWebPartWebPartStrings {
   PropertyPaneDescription: string;
   BasicGroupName: string;
   DescriptionFieldLabel: string;
+  SiteUrlFieldLabel: string;
+  TaskListNameFieldLabel: string;
   AppLocalEnvironmentSharePoint: string;
   AppLocalEnvironmentTeams: string;
   AppLocalEnvironmentOffice: string;
