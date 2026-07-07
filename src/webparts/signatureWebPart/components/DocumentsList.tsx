@@ -1,6 +1,15 @@
 import * as React from 'react';
-import { DetailsList, DetailsListLayoutMode, ConstrainMode, IconButton, IColumn, SelectionMode, Spinner, SpinnerSize } from '@fluentui/react';
+import { DetailsList, DetailsListLayoutMode, ConstrainMode, IColumn, SelectionMode, Spinner, SpinnerSize, Dropdown, IDropdownOption } from '@fluentui/react';
+import { Icon } from '@fluentui/react/lib/Icon';
 
+type StatusFilter = 'Pending' | 'Signed' | 'Rejected' | 'Total';
+
+const statusFilterOptions: IDropdownOption[] = [
+  { key: 'Pending', text: 'Pending' },
+  { key: 'Signed', text: 'Signed' },
+  { key: 'Rejected', text: 'Rejected' },
+  { key: 'Total', text: 'Total' }
+];
 export interface IDocumentListItem {
   id: number;
   title?: string;
@@ -85,35 +94,84 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] =>
     minWidth: 80,
     isResizable: false,
     onRender: (item: IDocumentListItem) => (
-      <IconButton
-        iconProps={{ iconName: 'OpenInNew' }}
+      /*<IconButton
+        iconProps={{ iconName: 'InsertSignatureLine' }}
         title={`Open ${item.documentName || item.title || 'document'}`}
         ariaLabel={`Open ${item.documentName || item.title || 'document'}`}
         onClick={() => onOpenItem(item)}
-      />
+        styles={{ root: { border: 'none', background: 'transparent', padding: 0 } }}
+      />*/
+      <Icon
+    iconName="InsertSignatureLine"
+    title={`Open ${item.documentName || item.title || 'document'}`}
+    aria-label={`Open ${item.documentName || item.title || 'document'}`}
+    role="button"
+    tabIndex={0}
+    onClick={() => onOpenItem(item)}
+    onKeyDown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onOpenItem(item);
+      }
+    }}
+    styles={{
+    root: {
+      cursor: 'pointer',
+      fontSize: 16,
+      color: 'var(--themePrimary)',
+      selectors: {
+        ':hover': { color: 'var(--themeDarkAlt)' },
+      },
+    },
+  }}
+  />
     )
   }
 ];
 
 export default function DocumentsList(props: IDocumentsListProps): React.ReactElement {
-  if (props.isLoading) {
-    return <Spinner label="Loading signed documents..." size={SpinnerSize.medium} />;
-  }
+  const [selectedStatus, setSelectedStatus] = React.useState<StatusFilter>('Pending');
 
-  if (props.items.length === 0) {
-    return <div>No signed documents with PDF attachments were found.</div>;
+  const filteredItems: IDocumentListItem[] = React.useMemo(() => {
+    if (selectedStatus === 'Total') {
+      return props.items;
+    }
+
+    const normalizedStatus: string = selectedStatus.toLowerCase();
+    return props.items.filter((item: IDocumentListItem) =>
+      (item.approvalStatus || '').toLowerCase().indexOf(normalizedStatus) !== -1
+    );
+  }, [props.items, selectedStatus]);
+
+  if (props.isLoading) {
+    return <Spinner label="Loading tasks..." size={SpinnerSize.medium} />;
   }
 
   return (
-    <DetailsList
-      items={props.items}
-      columns={getColumns(props.onOpenItem)}
-      setKey="documentsList"
-      selectionMode={SelectionMode.none}
-      layoutMode={DetailsListLayoutMode.justified}
-      constrainMode={ConstrainMode.unconstrained}
-      compact={true}
-      ariaLabel="Signed documents list"
-    />
+    <div>
+      <div style={{ marginBottom: 12, maxWidth: 220 }}>
+        <Dropdown
+          label="Filter by status"
+          selectedKey={selectedStatus}
+          options={statusFilterOptions}
+          onChange={(_, option) => setSelectedStatus((option?.key as StatusFilter) || 'Pending')}
+        />
+      </div>
+
+      {filteredItems.length === 0 ? (
+        <div>No items found for {selectedStatus} status.</div>
+      ) : (
+        <DetailsList
+          items={filteredItems}
+          columns={getColumns(props.onOpenItem)}
+          setKey="documentsList"
+          selectionMode={SelectionMode.none}
+          layoutMode={DetailsListLayoutMode.justified}
+          constrainMode={ConstrainMode.unconstrained}
+          compact={true}
+          ariaLabel="Signed documents list"
+        />
+      )}
+    </div>
   );
 }

@@ -1,6 +1,5 @@
 import * as React from 'react';
 import SignatureCanvas from 'react-signature-canvas';
-import { PDFDocument } from 'pdf-lib';
 import * as pdfJsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 import { SPHttpClient } from '@microsoft/sp-http';
@@ -128,7 +127,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     } = this.state;
 
     const canPlaceSignature: boolean = !!pageSize && signatureDataUrl.length > 0 && !isRendering;
-    const canDownload: boolean = !!this.state.pdfBytes && !!placement && signatureDataUrl.length > 0 && !isLoading;
     const signatureHeight: number = this._getSignatureHeight(signatureWidth, signatureAspectRatio);
 
     return (
@@ -194,14 +192,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  className={styles.downloadButton}
-                  disabled={!canDownload}
-                  onClick={this._downloadSignedPdf}
-                >
-                  Download signed PDF
-                </button>
               </aside>
 
               <main className={styles.previewArea}>
@@ -240,15 +230,15 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                     )}
                   </div>
                   {(isLoading || isRendering || pageCount === 0) && (
-                    <div className={styles.emptyState}>{isLoading || isRendering ? 'Working...' : 'No document available from SharePoint.'}</div>
+                    <div className={styles.emptyState}>{isLoading || isRendering ? 'Working...' : 'No document found'}</div>
                   )}
                 </div>
               </main>
             </div>
           </div>
           <DialogFooter>
-            <PrimaryButton text="Close" onClick={this._closeDialog} />
-            <DefaultButton text="Cancel" onClick={this._closeDialog} />
+            <PrimaryButton text="Approve" onClick={this._closeDialog} />
+            <DefaultButton text="Reject" onClick={this._closeDialog} />
           </DialogFooter>
         </Dialog>
       </section>
@@ -339,7 +329,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         y,
         width: this.state.signatureWidth
       },
-      statusMessage: 'Signature placed. Download the signed PDF when ready.'
+      statusMessage: 'Signature placed successfully.'
     });
   };
 
@@ -462,15 +452,19 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
 
     this.setState({
       isDocumentsLoading: true,
-      statusMessage: 'Loading signed documents from SharePoint...',
+      statusMessage: 'Loading tasks...',
       documents: []
     });
 
     const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
     const listInfo = this._getListApiPath(listName, trimmedSiteUrl);
+    const currentUserEmail = this.props.userEmail?.trim() || '';
+    const signatoryFilter = currentUserEmail
+      ? `&$filter=L1Signatory eq '${currentUserEmail.replace(/'/g, "''")}'`
+      : '';
 
     try {
-      const requestUrl = `${apiBaseUrl}/_api/${listInfo.apiPath}/items?$select=Id,Title,DocumentName,DocumentNumber,Trader,AccountCode,ApprovalStatus,Created,Modified,AttachmentFiles&$expand=AttachmentFiles&$top=500`;
+      const requestUrl = `${apiBaseUrl}/_api/${listInfo.apiPath}/items?$select=Id,Title,DocumentName,DocumentNumber,Trader,AccountCode,ApprovalStatus,Created,Modified,L1Signatory,AttachmentFiles&$expand=AttachmentFiles&$top=500${signatoryFilter}`;
       const itemsResponse = await spHttpClient.get(
         requestUrl,
         SPHttpClient.configurations.v1,
@@ -719,56 +713,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
-  private readonly _downloadSignedPdf = async (): Promise<void> => {
-    const { fileName, pdfBytes, placement, signatureDataUrl } = this.state;
-    const canvas: HTMLCanvasElement | null = this._previewCanvasRef.current;
-
-    if (!pdfBytes || !placement || !signatureDataUrl || !canvas) {
-      this.setState({ statusMessage: 'Load a SharePoint PDF, draw a signature, and place it before downloading.' });
-      return;
-    }
-
-    this.setState({
-      isLoading: true,
-      statusMessage: 'Creating signed PDF...'
-    });
-
-    try {
-      const pdfDoc: PDFDocument = await PDFDocument.load(pdfBytes);
-      const signatureImage = await pdfDoc.embedPng(signatureDataUrl);
-      const page = pdfDoc.getPages()[placement.pageIndex];
-      const pageWidth: number = page.getWidth();
-      const pageHeight: number = page.getHeight();
-      const signaturePdfWidth: number = (placement.width / canvas.width) * pageWidth;
-      const signaturePdfHeight: number = signaturePdfWidth / (signatureImage.width / signatureImage.height);
-      const x: number = (placement.x / canvas.width) * pageWidth;
-      const y: number = pageHeight - ((placement.y / canvas.height) * pageHeight) - signaturePdfHeight;
-
-      page.drawImage(signatureImage, {
-        x,
-        y,
-        width: signaturePdfWidth,
-        height: signaturePdfHeight
-      });
-
-      const signedPdfBytes: Uint8Array = await pdfDoc.save();
-      this._downloadBlob(
-        signedPdfBytes,
-        fileName.replace(/\.pdf$/i, '') + '-signed.pdf'
-      );
-
-      this.setState({
-        isLoading: false,
-        statusMessage: 'Signed PDF downloaded.'
-      });
-    } catch {
-      this.setState({
-        isLoading: false,
-        statusMessage: 'The signed PDF could not be created.'
-      });
-    }
-  };
-
   private async _renderCurrentPage(): Promise<void> {
     const { pdfDocument, currentPageIndex } = this.state;
     const canvasWrap: HTMLDivElement | null = this._canvasWrapRef.current;
@@ -894,14 +838,4 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   }
 
-  private _downloadBlob(bytes: Uint8Array, fileName: string): void {
-    const blob: Blob = new Blob([bytes], { type: 'application/pdf' });
-    const url: string = URL.createObjectURL(blob);
-    const link: HTMLAnchorElement = document.createElement('a');
-
-    link.href = url;
-    link.download = fileName;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
 }

@@ -6,6 +6,7 @@ export interface ISignatureWebPartProps {
   environmentMessage: string;
   hasTeamsContext: boolean;
   userDisplayName: string;
+  userEmail?: string;
   siteUrl?: string;
   taskListName?: string;
   webAbsoluteUrl: string;

@@ -32,6 +32,7 @@ export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISign
         environmentMessage: this._environmentMessage,
         hasTeamsContext: !!this.context.sdks.microsoftTeams,
         userDisplayName: this.context.pageContext.user.displayName,
+        userEmail: this.context.pageContext.user.email,
         siteUrl: this.properties.siteUrl,
         taskListName: this.properties.taskListName,
         webAbsoluteUrl: this.context.pageContext.web.absoluteUrl,
