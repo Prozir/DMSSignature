@@ -13,11 +13,14 @@ const statusFilterOptions: IDropdownOption[] = [
 export interface IDocumentListItem {
   id: number;
   title?: string;
+  documentId?: string;
   documentName?: string;
   documentNumber?: string;
   trader?: string;
   accountCode?: string;
   approvalStatus?: string;
+  comments?: string;
+  isTaskActive?: boolean;
   created?: string;
   modified?: string;
   attachmentFileName?: string;
