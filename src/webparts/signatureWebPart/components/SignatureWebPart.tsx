@@ -43,11 +43,16 @@ interface ISignatureWebPartState {
   isRejectDialogOpen: boolean;
   isApproving: boolean;
   isRejecting: boolean;
+  isSavingSignature: boolean;
+  isLoadingSavedSignature: boolean;
   activeDocument?: IDocumentListItem;
   rejectionComments: string;
+  savedSignatureDataUrl: string;
+  savedSignatureAspectRatio: number;
 }
 
 export default class SignatureWebPart extends React.Component<ISignatureWebPartProps, ISignatureWebPartState> {
+  private static readonly _signatureMasterListName: string = 'Signature Master';
   private readonly _canvasWrapRef: React.RefObject<HTMLDivElement> = React.createRef<HTMLDivElement>();
   private readonly _previewCanvasRef: React.RefObject<HTMLCanvasElement> = React.createRef<HTMLCanvasElement>();
   private readonly _signatureRef: React.RefObject<SignatureCanvas> = React.createRef<SignatureCanvas>();
@@ -62,17 +67,21 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       currentPageIndex: 0,
       signatureDataUrl: '',
       signatureAspectRatio: 2.8,
-      signatureWidth: 110,
+      signatureWidth: 60,
       isLoading: false,
       isRendering: false,
-      statusMessage: 'Loading documents from SharePoint... waiting for selection.',
+      statusMessage: 'Loading documents...',
       documents: [],
       isDocumentsLoading: false,
       isDialogOpen: false,
       isRejectDialogOpen: false,
       isApproving: false,
       isRejecting: false,
-      rejectionComments: ''
+      isSavingSignature: false,
+      isLoadingSavedSignature: false,
+      rejectionComments: '',
+      savedSignatureDataUrl: '',
+      savedSignatureAspectRatio: 2.8
     };
   }
 
@@ -107,6 +116,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
 
   public componentDidMount(): void {
     window.addEventListener('resize', this._handleWindowResize);
+
     this._loadDocumentListFromSharePoint().catch(() => {
       this.setState({
         isDocumentsLoading: false,
@@ -140,6 +150,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     const canPlaceSignature: boolean = !!pageSize && signatureDataUrl.length > 0 && !isRendering;
     const canApprove: boolean = !!this.state.activeDocument && !!placement && signatureDataUrl.length > 0 && !isLoading && !isRendering && !this.state.isApproving;
     const canReject: boolean = !!this.state.activeDocument && !this.state.isRejecting && !this.state.isApproving;
+    const canSaveSignature: boolean = !this.state.isSavingSignature && !this.state.isLoadingSavedSignature;
     const canSubmitReject: boolean = this.state.rejectionComments.trim().length > 0 && !this.state.isRejecting;
     const approveButtonTitle: string = canApprove
       ? 'Save the signed PDF and approve the current document'
@@ -186,6 +197,9 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                   />
                   <div className={styles.buttonRow}>
                     <button type="button" onClick={this._captureSignature}>Use signature</button>
+                    <button type="button" onClick={this._saveSignatureToSharePoint} disabled={!canSaveSignature}>
+                      {this.state.isSavingSignature ? 'Saving signature...' : 'Save Signature'}
+                    </button>
                     <button type="button" onClick={this._clearSignature}>Clear</button>
                   </div>
                 </div>
@@ -441,12 +455,27 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       pageSize: undefined,
       placement: undefined,
       signatureDataUrl: '',
+      signatureAspectRatio: 2.8,
       rejectionComments: '',
+      isLoadingSavedSignature: true,
       isLoading: true,
-      statusMessage: 'Loading PDF for selected document...'
+      statusMessage: 'Loading PDF and saved signature...'
     });
 
-    await this._loadDocumentFromSharePoint(item.id, item.attachmentServerRelativeUrl);
+    await Promise.all([
+      this._loadSavedSignatureFromSharePoint(),
+      this._loadDocumentFromSharePoint(item.id, item.attachmentServerRelativeUrl)
+    ]);
+
+    if (this.state.savedSignatureDataUrl) {
+      try {
+        await this._populateSignaturePad(this.state.savedSignatureDataUrl);
+      } catch {
+        this.setState({
+          statusMessage: 'The saved signature preview could not be loaded into the canvas.'
+        });
+      }
+    }
   };
 
   private readonly _closeDialog = (): void => {
@@ -1216,6 +1245,81 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     await this._addAttachmentFile(apiBaseUrl, listTitle, activeDocument.id, currentAttachmentName, signedPdfBytes);
   };
 
+  private readonly _saveSignatureToSharePoint = async (): Promise<void> => {
+    const { siteUrl, webAbsoluteUrl } = this.props;
+    const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
+    const userEmail: string = (this.props.userEmail || '').trim();
+
+    if (!trimmedSiteUrl) {
+      this.setState({
+        statusMessage: 'The site URL is not configured.'
+      });
+      return;
+    }
+
+    if (!userEmail) {
+      this.setState({
+        statusMessage: 'The current user email is not available. Unable to save the signature.'
+      });
+      return;
+    }
+
+    const signatureDataUrl = this._getCurrentSignatureDataUrl();
+
+    if (!signatureDataUrl) {
+      this.setState({
+        statusMessage: 'Draw or load a signature before saving it.'
+      });
+      return;
+    }
+
+    this.setState({
+      isSavingSignature: true,
+      statusMessage: 'Saving signature to Signature Master...'
+    });
+
+    const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
+
+    try {
+      const signatureBytes = this._dataUrlToUint8Array(signatureDataUrl);
+      const aspectRatio = await this._getImageAspectRatio(signatureDataUrl);
+      const item = await this._getOrCreateSignatureMasterItem(apiBaseUrl, userEmail);
+      const fileName = this._getSignatureFileName(userEmail);
+
+      for (let i = 0; i < item.attachments.length; i++) {
+        await this._deleteAttachmentFile(
+          apiBaseUrl,
+          SignatureWebPart._signatureMasterListName.replace(/'/g, "''"),
+          item.id,
+          encodeURIComponent(item.attachments[i].FileName)
+        );
+      }
+
+      await this._addAttachmentFile(
+        apiBaseUrl,
+        SignatureWebPart._signatureMasterListName.replace(/'/g, "''"),
+        item.id,
+        fileName,
+        signatureBytes,
+        'image/png'
+      );
+
+      this.setState({
+        isSavingSignature: false,
+        signatureDataUrl,
+        signatureAspectRatio: aspectRatio,
+        savedSignatureDataUrl: signatureDataUrl,
+        savedSignatureAspectRatio: aspectRatio,
+        statusMessage: 'Signature saved to Signature Master.'
+      });
+    } catch (error) {
+      this.setState({
+        isSavingSignature: false,
+        statusMessage: `Unable to save signature to Signature Master. ${this._getErrorMessage(error)}`
+      });
+    }
+  };
+
   private readonly _deleteAttachmentFile = async (
     apiBaseUrl: string,
     listTitle: string,
@@ -1244,7 +1348,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     listTitle: string,
     itemId: number,
     fileName: string,
-    fileBytes: Uint8Array
+    fileBytes: Uint8Array,
+    contentType: string = 'application/pdf'
   ): Promise<void> => {
     const encodedFileName = encodeURIComponent(fileName);
     const response = await this.props.spHttpClient.post(
@@ -1253,9 +1358,9 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       {
         headers: {
           Accept: 'application/json;odata=nometadata',
-          'Content-Type': 'application/pdf'
+          'Content-Type': contentType
         },
-        body: new Blob([fileBytes], { type: 'application/pdf' })
+        body: new Blob([fileBytes], { type: contentType })
       }
     );
 
@@ -1274,6 +1379,242 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
 
     return bytes;
+  }
+
+  private _getCurrentSignatureDataUrl(): string | undefined {
+    const signaturePad: SignatureCanvas | null = this._signatureRef.current;
+
+    if (signaturePad && !signaturePad.isEmpty()) {
+      const trimmedCanvas = this._getTrimmedSignatureCanvas(signaturePad);
+
+      if (trimmedCanvas) {
+        return trimmedCanvas.toDataURL('image/png');
+      }
+    }
+
+    return this.state.signatureDataUrl || undefined;
+  }
+
+  private _getSignatureFileName(userEmail: string): string {
+    const sanitizedEmail = userEmail.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return `signature_${sanitizedEmail}.png`;
+  }
+
+  private async _getImageAspectRatio(dataUrl: string): Promise<number> {
+    const image = await this._loadImageFromDataUrl(dataUrl);
+
+    if (!image.naturalWidth || !image.naturalHeight) {
+      return 2.8;
+    }
+
+    return image.naturalWidth / image.naturalHeight;
+  }
+
+  private _loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Unable to decode image data URL.'));
+      image.src = dataUrl;
+    });
+  }
+
+  private async _populateSignaturePad(signatureDataUrl: string): Promise<void> {
+    const signaturePad: SignatureCanvas | null = this._signatureRef.current;
+
+    if (!signaturePad) {
+      return;
+    }
+
+    const sourceImage = await this._loadImageFromDataUrl(signatureDataUrl);
+    const targetCanvas = signaturePad.getCanvas();
+    const context = targetCanvas.getContext('2d');
+
+    if (!context) {
+      return;
+    }
+
+    signaturePad.clear();
+
+    const padding = 8;
+    const availableWidth = Math.max(1, targetCanvas.width - (padding * 2));
+    const availableHeight = Math.max(1, targetCanvas.height - (padding * 2));
+    const widthScale = availableWidth / sourceImage.naturalWidth;
+    const heightScale = availableHeight / sourceImage.naturalHeight;
+    const scale = Math.min(widthScale, heightScale, 1);
+    const drawWidth = sourceImage.naturalWidth * scale;
+    const drawHeight = sourceImage.naturalHeight * scale;
+    const offsetX = (targetCanvas.width - drawWidth) / 2;
+    const offsetY = (targetCanvas.height - drawHeight) / 2;
+
+    context.drawImage(sourceImage, offsetX, offsetY, drawWidth, drawHeight);
+  }
+
+  private readonly _loadSavedSignatureFromSharePoint = async (): Promise<void> => {
+    const { siteUrl, webAbsoluteUrl } = this.props;
+    const userEmail: string = (this.props.userEmail || '').trim();
+    const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
+
+    if (!trimmedSiteUrl || !userEmail) {
+      this.setState({
+        isLoadingSavedSignature: false,
+        savedSignatureDataUrl: '',
+        savedSignatureAspectRatio: 2.8
+      });
+      return;
+    }
+
+    this.setState({
+      isLoadingSavedSignature: true
+    });
+
+    const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
+
+    try {
+      const item = await this._tryGetSignatureMasterItem(apiBaseUrl, userEmail);
+
+      if (!item || item.attachments.length === 0) {
+        this.setState({
+          isLoadingSavedSignature: false,
+          savedSignatureDataUrl: '',
+          savedSignatureAspectRatio: 2.8
+        });
+        return;
+      }
+
+      let attachment = item.attachments[0];
+
+      for (let i = 0; i < item.attachments.length; i++) {
+        const fileName = item.attachments[i].FileName.toLowerCase();
+        if (fileName.length > 4 && fileName.substr(fileName.length - 4) === '.png') {
+          attachment = item.attachments[i];
+          break;
+        }
+      }
+
+      const fileResponse = await this.props.spHttpClient.get(
+        `${apiBaseUrl}/_api/web/GetFileByServerRelativeUrl('${this._normalizeServerRelativeUrlForApi(attachment.ServerRelativeUrl)}')/$value`,
+        SPHttpClient.configurations.v1,
+        {
+          headers: {
+            Accept: 'image/png'
+          }
+        }
+      );
+
+      if (!fileResponse.ok) {
+        throw new Error(`Unable to read saved signature attachment. Status ${fileResponse.status}`);
+      }
+
+      const bytes = new Uint8Array(await fileResponse.arrayBuffer());
+      const signatureDataUrl = this._uint8ArrayToDataUrl(bytes, 'image/png');
+      const aspectRatio = await this._getImageAspectRatio(signatureDataUrl);
+
+      this.setState({
+        isLoadingSavedSignature: false,
+        savedSignatureDataUrl: signatureDataUrl,
+        savedSignatureAspectRatio: aspectRatio,
+        signatureDataUrl: signatureDataUrl,
+        signatureAspectRatio: aspectRatio
+      });
+    } catch (error) {
+      this.setState({
+        isLoadingSavedSignature: false,
+        savedSignatureDataUrl: '',
+        savedSignatureAspectRatio: 2.8,
+        statusMessage: `Unable to load signature from Signature Master. ${this._getErrorMessage(error)}`
+      });
+    }
+  };
+
+  private _uint8ArrayToDataUrl(bytes: Uint8Array, contentType: string): string {
+    let binary = '';
+
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+
+    return `data:${contentType};base64,${btoa(binary)}`;
+  }
+
+  private async _tryGetSignatureMasterItem(
+    apiBaseUrl: string,
+    userEmail: string
+  ): Promise<{ id: number; attachments: Array<{ FileName: string; ServerRelativeUrl: string }> } | undefined> {
+    const listTitle = SignatureWebPart._signatureMasterListName.replace(/'/g, "''");
+    const safeEmail = userEmail.replace(/'/g, "''");
+    const queryUrl = `${apiBaseUrl}/_api/web/lists/getbytitle('${listTitle}')/items?$select=Id,Title,AttachmentFiles&$expand=AttachmentFiles&$filter=Title eq '${safeEmail}'&$top=1`;
+    const response = await this.props.spHttpClient.get(
+      queryUrl,
+      SPHttpClient.configurations.v1,
+      {
+        headers: {
+          Accept: 'application/json;odata=nometadata'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Unable to query Signature Master list. Status ${response.status}`);
+    }
+
+    const json = await response.json();
+    const items = (json && (json.value as Array<{
+      Id: number;
+      Title?: string;
+      AttachmentFiles?: Array<{ FileName: string; ServerRelativeUrl: string }>;
+    }>)) || [];
+
+    if (items.length === 0) {
+      return undefined;
+    }
+
+    return {
+      id: items[0].Id,
+      attachments: items[0].AttachmentFiles || []
+    };
+  }
+
+  private async _getOrCreateSignatureMasterItem(
+    apiBaseUrl: string,
+    userEmail: string
+  ): Promise<{ id: number; attachments: Array<{ FileName: string; ServerRelativeUrl: string }> }> {
+    const existingItem = await this._tryGetSignatureMasterItem(apiBaseUrl, userEmail);
+
+    if (existingItem) {
+      return existingItem;
+    }
+
+    const listTitle = SignatureWebPart._signatureMasterListName.replace(/'/g, "''");
+    const createResponse = await this.props.spHttpClient.post(
+      `${apiBaseUrl}/_api/web/lists/getbytitle('${listTitle}')/items`,
+      SPHttpClient.configurations.v1,
+      {
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'Content-Type': 'application/json;odata=nometadata'
+        },
+        body: JSON.stringify({
+          Title: userEmail
+        })
+      }
+    );
+
+    if (!createResponse.ok) {
+      throw new Error(`Unable to create Signature Master list item. Status ${createResponse.status}`);
+    }
+
+    const createJson = await createResponse.json() as { Id?: number };
+
+    if (!createJson.Id) {
+      throw new Error('Signature Master list item was created but no item ID was returned.');
+    }
+
+    return {
+      id: createJson.Id,
+      attachments: []
+    };
   }
 
   private _isPdfByteArray(bytes?: Uint8Array): boolean {
