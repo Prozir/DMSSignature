@@ -96,7 +96,10 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] =>
     fieldName: 'action',
     minWidth: 80,
     isResizable: false,
-    onRender: (item: IDocumentListItem) => (
+    onRender: (item: IDocumentListItem) => {
+      const isPendingItem = (item.approvalStatus || '').toLowerCase().indexOf('pending') !== -1;
+
+      return (
       /*<IconButton
         iconProps={{ iconName: 'InsertSignatureLine' }}
         title={`Open ${item.documentName || item.title || 'document'}`}
@@ -106,12 +109,17 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] =>
       />*/
       <Icon
     iconName="InsertSignatureLine"
-    title={`Open ${item.documentName || item.title || 'document'}`}
-    aria-label={`Open ${item.documentName || item.title || 'document'}`}
-    role="button"
-    tabIndex={0}
-    onClick={() => onOpenItem(item)}
+    title={isPendingItem ? `Open ${item.documentName || item.title || 'document'}` : 'Available only for Pending items'}
+    aria-label={isPendingItem ? `Open ${item.documentName || item.title || 'document'}` : 'Action disabled for non-pending status'}
+    aria-disabled={!isPendingItem}
+    role={isPendingItem ? 'button' : undefined}
+    tabIndex={isPendingItem ? 0 : -1}
+    onClick={isPendingItem ? (() => onOpenItem(item)) : undefined}
     onKeyDown={(e) => {
+      if (!isPendingItem) {
+        return;
+      }
+
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         onOpenItem(item);
@@ -119,16 +127,17 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] =>
     }}
     styles={{
     root: {
-      cursor: 'pointer',
+      cursor: isPendingItem ? 'pointer' : 'not-allowed',
       fontSize: 16,
-      color: 'var(--themePrimary)',
+      color: isPendingItem ? 'var(--themePrimary)' : '#94a3b8',
       selectors: {
-        ':hover': { color: 'var(--themeDarkAlt)' },
+        ':hover': { color: isPendingItem ? 'var(--themeDarkAlt)' : '#94a3b8' },
       },
     },
   }}
   />
-    )
+    );
+    }
   }
 ];
 

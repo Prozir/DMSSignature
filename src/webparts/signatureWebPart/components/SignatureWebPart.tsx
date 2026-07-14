@@ -56,6 +56,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
   private readonly _canvasWrapRef: React.RefObject<HTMLDivElement> = React.createRef<HTMLDivElement>();
   private readonly _previewCanvasRef: React.RefObject<HTMLCanvasElement> = React.createRef<HTMLCanvasElement>();
   private readonly _signatureRef: React.RefObject<SignatureCanvas> = React.createRef<SignatureCanvas>();
+  private _isSignaturePointerDown: boolean = false;
   private _resizeTimer: number | undefined;
 
   public constructor(props: ISignatureWebPartProps) {
@@ -191,16 +192,25 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                     clearOnResize={false}
                     canvasProps={{
                       className: styles.signatureCanvas,
-                      'aria-label': 'Draw signature'
+                      'aria-label': 'Draw signature',
+                      onMouseDown: this._handleSignaturePointerDown,
+                      onMouseUp: this._handleSignaturePointerUp,
+                      onMouseLeave: this._handleSignaturePointerUp,
+                      onTouchStart: this._handleSignaturePointerDown,
+                      onTouchEnd: this._handleSignaturePointerUp,
+                      onTouchCancel: this._handleSignaturePointerUp,
+                      onMouseMoveCapture: this._handleSignatureHoverGuard
                     }}
                     onEnd={this._captureSignature}
                   />
                   <div className={styles.buttonRow}>
-                    <button type="button" onClick={this._captureSignature}>Use signature</button>
-                    <button type="button" onClick={this._saveSignatureToSharePoint} disabled={!canSaveSignature}>
-                      {this.state.isSavingSignature ? 'Saving signature...' : 'Save Signature'}
-                    </button>
-                    <button type="button" onClick={this._clearSignature}>Clear</button>
+                    <PrimaryButton text="Use Signature" onClick={this._captureSignature} />
+                    <PrimaryButton
+                      text={this.state.isSavingSignature ? 'Saving signature...' : 'Save Signature'}
+                      onClick={this._saveSignatureToSharePoint}
+                      disabled={!canSaveSignature}
+                    />
+                    <DefaultButton text="Clear" onClick={this._clearSignature} />
                   </div>
                 </div>
 
@@ -311,6 +321,32 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       </section>
     );
   }
+
+  private readonly _handleSignaturePointerDown = (): void => {
+    this._isSignaturePointerDown = true;
+  };
+
+  private readonly _handleSignaturePointerUp = (): void => {
+    this._isSignaturePointerDown = false;
+    this._resetSignaturePadInteraction();
+  };
+
+  private readonly _handleSignatureHoverGuard = (event: React.MouseEvent<HTMLCanvasElement>): void => {
+    if (!this._isSignaturePointerDown && event.buttons === 0) {
+      this._resetSignaturePadInteraction();
+    }
+  };
+
+  private readonly _resetSignaturePadInteraction = (): void => {
+    const signaturePad = this._signatureRef.current?.getSignaturePad?.();
+
+    if (!signaturePad) {
+      return;
+    }
+
+    signaturePad.off();
+    signaturePad.on();
+  };
 
   private readonly _captureSignature = (): void => {
     const signaturePad: SignatureCanvas | null = this._signatureRef.current;

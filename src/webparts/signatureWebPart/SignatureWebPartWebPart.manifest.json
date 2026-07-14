@@ -19,8 +19,8 @@
     "groupId": "5c03119e-3074-46fd-976b-c60198311f70", // Advanced
     "group": { "default": "Advanced" },
     "title": { "default": "SignatureWebPart" },
-    "description": { "default": "SignatureWebPart description" },
-    "officeFabricIconFontName": "Page",
+    "description": { "default": "DMSSignatureWebPart facilitates the DMS Application signature process" },
+    "officeFabricIconFontName": "InsertSignatureLine",
     "properties": {
       "description": "SignatureWebPart"
     }

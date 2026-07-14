@@ -129,13 +129,18 @@
 
 .buttonRow {
   display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
   margin-top: 10px;
 
-  button:last-child {
-    background: #ffffff;
-    border-color: #cbd5e1;
-    color: #1e293b;
+  :global(.ms-Button) {
+    min-width: 0;
+    padding: 0 8px;
+  }
+
+  :global(.ms-Button-label) {
+    font-size: 12px;
+    white-space: nowrap;
   }
 }
 
