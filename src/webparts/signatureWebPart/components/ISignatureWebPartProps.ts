@@ -1,5 +1,7 @@
 import type { SPHttpClient } from '@microsoft/sp-http';
 
+export type DocumentDisplayMode = 'detailsList' | 'cards';
+
 export interface ISignatureWebPartProps {
   description: string;
   isDarkTheme: boolean;
@@ -9,6 +11,7 @@ export interface ISignatureWebPartProps {
   userEmail?: string;
   siteUrl?: string;
   taskListName?: string;
+  displayMode: DocumentDisplayMode;
   webAbsoluteUrl: string;
   spHttpClient: SPHttpClient;
 }

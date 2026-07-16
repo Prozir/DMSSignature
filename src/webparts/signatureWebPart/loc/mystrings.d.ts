@@ -4,6 +4,9 @@ declare interface ISignatureWebPartWebPartStrings {
   DescriptionFieldLabel: string;
   SiteUrlFieldLabel: string;
   TaskListNameFieldLabel: string;
+  DisplayModeFieldLabel: string;
+  DisplayModeOptionDetailsList: string;
+  DisplayModeOptionCards: string;
   AppLocalEnvironmentSharePoint: string;
   AppLocalEnvironmentTeams: string;
   AppLocalEnvironmentOffice: string;

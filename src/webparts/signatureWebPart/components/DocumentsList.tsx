@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { DetailsList, DetailsListLayoutMode, ConstrainMode, IColumn, SelectionMode, Spinner, SpinnerSize, Dropdown, IDropdownOption } from '@fluentui/react';
 import { Icon } from '@fluentui/react/lib/Icon';
+import styles from './SignatureWebPart.module.scss';
+import type { DocumentDisplayMode } from './ISignatureWebPartProps';
 
 type StatusFilter = 'Pending' | 'Signed' | 'Rejected' | 'Total';
 
@@ -30,8 +32,51 @@ export interface IDocumentListItem {
 export interface IDocumentsListProps {
   items: IDocumentListItem[];
   isLoading: boolean;
+  displayMode: DocumentDisplayMode;
   onOpenItem: (item: IDocumentListItem) => void;
 }
+
+const getDateTimeValue = (value?: string): string => value ? new Date(value).toLocaleString() : '';
+
+const isPending = (item: IDocumentListItem): boolean =>
+  (item.approvalStatus || '').toLowerCase().indexOf('pending') !== -1;
+
+const renderActionIcon = (item: IDocumentListItem, onOpenItem: (item: IDocumentListItem) => void, className?: string): React.ReactElement => {
+  const isPendingItem: boolean = isPending(item);
+
+  return (
+    <Icon
+      iconName="InsertSignatureLine"
+      className={className}
+      title={isPendingItem ? `Open ${item.documentName || item.title || 'document'}` : 'Available only for Pending items'}
+      aria-label={isPendingItem ? `Open ${item.documentName || item.title || 'document'}` : 'Action disabled for non-pending status'}
+      aria-disabled={!isPendingItem}
+      role={isPendingItem ? 'button' : undefined}
+      tabIndex={isPendingItem ? 0 : -1}
+      onClick={isPendingItem ? (() => onOpenItem(item)) : undefined}
+      onKeyDown={(e) => {
+        if (!isPendingItem) {
+          return;
+        }
+
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenItem(item);
+        }
+      }}
+      styles={{
+        root: {
+          cursor: isPendingItem ? 'pointer' : 'not-allowed',
+          fontSize: 16,
+          color: isPendingItem ? 'var(--themePrimary)' : '#94a3b8',
+          selectors: {
+            ':hover': { color: isPendingItem ? 'var(--themeDarkAlt)' : '#94a3b8' },
+          },
+        },
+      }}
+    />
+  );
+};
 
 const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] => [
   {
@@ -80,7 +125,7 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] =>
     fieldName: 'created',
     minWidth: 140,
     isResizable: true,
-    onRender: (item: IDocumentListItem) => item.created ? new Date(item.created).toLocaleString() : ''
+    onRender: (item: IDocumentListItem) => getDateTimeValue(item.created)
   },
   {
     key: 'columnModified',
@@ -88,7 +133,7 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] =>
     fieldName: 'modified',
     minWidth: 140,
     isResizable: true,
-    onRender: (item: IDocumentListItem) => item.modified ? new Date(item.modified).toLocaleString() : ''
+    onRender: (item: IDocumentListItem) => getDateTimeValue(item.modified)
   },
   {
     key: 'columnAction',
@@ -96,48 +141,7 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] =>
     fieldName: 'action',
     minWidth: 80,
     isResizable: false,
-    onRender: (item: IDocumentListItem) => {
-      const isPendingItem = (item.approvalStatus || '').toLowerCase().indexOf('pending') !== -1;
-
-      return (
-      /*<IconButton
-        iconProps={{ iconName: 'InsertSignatureLine' }}
-        title={`Open ${item.documentName || item.title || 'document'}`}
-        ariaLabel={`Open ${item.documentName || item.title || 'document'}`}
-        onClick={() => onOpenItem(item)}
-        styles={{ root: { border: 'none', background: 'transparent', padding: 0 } }}
-      />*/
-      <Icon
-    iconName="InsertSignatureLine"
-    title={isPendingItem ? `Open ${item.documentName || item.title || 'document'}` : 'Available only for Pending items'}
-    aria-label={isPendingItem ? `Open ${item.documentName || item.title || 'document'}` : 'Action disabled for non-pending status'}
-    aria-disabled={!isPendingItem}
-    role={isPendingItem ? 'button' : undefined}
-    tabIndex={isPendingItem ? 0 : -1}
-    onClick={isPendingItem ? (() => onOpenItem(item)) : undefined}
-    onKeyDown={(e) => {
-      if (!isPendingItem) {
-        return;
-      }
-
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        onOpenItem(item);
-      }
-    }}
-    styles={{
-    root: {
-      cursor: isPendingItem ? 'pointer' : 'not-allowed',
-      fontSize: 16,
-      color: isPendingItem ? 'var(--themePrimary)' : '#94a3b8',
-      selectors: {
-        ':hover': { color: isPendingItem ? 'var(--themeDarkAlt)' : '#94a3b8' },
-      },
-    },
-  }}
-  />
-    );
-    }
+    onRender: (item: IDocumentListItem) => renderActionIcon(item, onOpenItem)
   }
 ];
 
@@ -172,6 +176,46 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
 
       {filteredItems.length === 0 ? (
         <div>No items found for {selectedStatus} status.</div>
+      ) : props.displayMode === 'cards' ? (
+        <div className={styles.documentsCards}>
+          {filteredItems.map((item: IDocumentListItem) => (
+            <div key={item.id} className={styles.documentCard}>
+              <div className={styles.documentCardHeader}>
+                <span className={styles.documentCardTitle}>{item.documentName || item.title || 'Untitled document'}</span>
+                <div className={styles.documentCardAction}>
+                  {renderActionIcon(item, props.onOpenItem, styles.documentActionIcon)}
+                </div>
+              </div>
+
+              <div className={styles.documentCardBody}>
+                <div className={styles.documentCardField}>
+                  <span className={styles.documentCardLabel}>Document Number</span>
+                  <span className={styles.documentCardValue}>{item.documentNumber || '-'}</span>
+                </div>
+                <div className={styles.documentCardField}>
+                  <span className={styles.documentCardLabel}>Trader</span>
+                  <span className={styles.documentCardValue}>{item.trader || '-'}</span>
+                </div>
+                <div className={styles.documentCardField}>
+                  <span className={styles.documentCardLabel}>Account Code</span>
+                  <span className={styles.documentCardValue}>{item.accountCode || '-'}</span>
+                </div>
+                <div className={styles.documentCardField}>
+                  <span className={styles.documentCardLabel}>Approval Status</span>
+                  <span className={styles.documentCardValue}>{item.approvalStatus || '-'}</span>
+                </div>
+                <div className={styles.documentCardField}>
+                  <span className={styles.documentCardLabel}>Created</span>
+                  <span className={styles.documentCardValue}>{getDateTimeValue(item.created) || '-'}</span>
+                </div>
+                <div className={styles.documentCardField}>
+                  <span className={styles.documentCardLabel}>Modified</span>
+                  <span className={styles.documentCardValue}>{getDateTimeValue(item.modified) || '-'}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <DetailsList
           items={filteredItems}
@@ -181,7 +225,7 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
           layoutMode={DetailsListLayoutMode.justified}
           constrainMode={ConstrainMode.unconstrained}
           compact={true}
-          ariaLabel="Signed documents list"
+          //ariaLabel="Signed documents list"
         />
       )}
     </div>

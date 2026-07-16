@@ -3,6 +3,7 @@ import * as ReactDom from 'react-dom';
 import { Version } from '@microsoft/sp-core-library';
 import {
   type IPropertyPaneConfiguration,
+  PropertyPaneDropdown,
   PropertyPaneTextField
 } from '@microsoft/sp-property-pane';
 import { BaseClientSideWebPart } from '@microsoft/sp-webpart-base';
@@ -10,12 +11,13 @@ import { IReadonlyTheme } from '@microsoft/sp-component-base';
 
 import * as strings from 'SignatureWebPartWebPartStrings';
 import SignatureWebPart from './components/SignatureWebPart';
-import type { ISignatureWebPartProps } from './components/ISignatureWebPartProps';
+import type { DocumentDisplayMode, ISignatureWebPartProps } from './components/ISignatureWebPartProps';
 
 export interface ISignatureWebPartWebPartProps {
   description: string;
   siteUrl?: string;
   taskListName?: string;
+  displayMode?: DocumentDisplayMode;
 }
 
 export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISignatureWebPartWebPartProps> {
@@ -35,6 +37,7 @@ export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISign
         userEmail: this.context.pageContext.user.email,
         siteUrl: this.properties.siteUrl,
         taskListName: this.properties.taskListName,
+        displayMode: this.properties.displayMode || 'detailsList',
         webAbsoluteUrl: this.context.pageContext.web.absoluteUrl,
         spHttpClient: this.context.spHttpClient
       }
@@ -123,6 +126,14 @@ export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISign
                 }),
                 PropertyPaneTextField('taskListName', {
                   label: strings.TaskListNameFieldLabel
+                }),
+                PropertyPaneDropdown('displayMode', {
+                  label: strings.DisplayModeFieldLabel,
+                  selectedKey: this.properties.displayMode || 'detailsList',
+                  options: [
+                    { key: 'detailsList', text: strings.DisplayModeOptionDetailsList },
+                    { key: 'cards', text: strings.DisplayModeOptionCards }
+                  ]
                 })
               ]
             }

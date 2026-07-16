@@ -137,6 +137,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
           <DocumentsList
             items={this.state.documents}
             isLoading={this.state.isDocumentsLoading}
+            displayMode={this.props.displayMode}
             onOpenItem={this._openDocument}
           />
         </div>
