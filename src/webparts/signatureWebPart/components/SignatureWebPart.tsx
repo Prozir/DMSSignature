@@ -8,48 +8,20 @@ import { Dialog, DialogFooter, DefaultButton, PrimaryButton } from '@fluentui/re
 import styles from './SignatureWebPart.module.scss';
 import DocumentsList, { IDocumentListItem } from './DocumentsList';
 import type { ISignatureWebPartProps } from './ISignatureWebPartProps';
-
-interface ISignaturePlacement {
-  pageIndex: number;
-  x: number;
-  y: number;
-  width: number;
-  renderedWidth: number;
-  renderedHeight: number;
-}
-
-interface IPdfPageSize {
-  width: number;
-  height: number;
-}
-
-interface ISignatureWebPartState {
-  fileName: string;
-  pdfBytes?: Uint8Array;
-  pdfDocument?: unknown;
-  pageCount: number;
-  currentPageIndex: number;
-  pageSize?: IPdfPageSize;
-  placement?: ISignaturePlacement;
-  signatureDataUrl: string;
-  signatureAspectRatio: number;
-  signatureWidth: number;
-  isLoading: boolean;
-  isRendering: boolean;
-  statusMessage: string;
-  documents: IDocumentListItem[];
-  isDocumentsLoading: boolean;
-  isDialogOpen: boolean;
-  isRejectDialogOpen: boolean;
-  isApproving: boolean;
-  isRejecting: boolean;
-  isSavingSignature: boolean;
-  isLoadingSavedSignature: boolean;
-  activeDocument?: IDocumentListItem;
-  rejectionComments: string;
-  savedSignatureDataUrl: string;
-  savedSignatureAspectRatio: number;
-}
+import type { ISignaturePlacement, ISignatureWebPartState } from './SignatureWebPartInterfaces';
+import {
+  getApprovalUpdate,
+  getFileNameFromServerRelativeUrl,
+  getListApiPath,
+  getRejectionUpdate,
+  normalizeServerRelativeUrlForApi
+} from './SignatureWebPartSharePointHelper';
+import {
+  dataUrlToUint8Array,
+  getSignatureHeight,
+  getTrimmedSignatureCanvas,
+  uint8ArrayToDataUrl
+} from './SignatureWebPartSignatureHelper';
 
 export default class SignatureWebPart extends React.Component<ISignatureWebPartProps, ISignatureWebPartState> {
   private static readonly _signatureMasterListName: string = 'Signature Master';
@@ -76,6 +48,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       isDocumentsLoading: false,
       isDialogOpen: false,
       isRejectDialogOpen: false,
+      isApprovalSuccessDialogOpen: false,
       isApproving: false,
       isRejecting: false,
       isSavingSignature: false,
@@ -156,7 +129,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     const approveButtonTitle: string = canApprove
       ? 'Save the signed PDF and approve the current document'
       : 'Place the signature on the PDF before approving';
-    const signatureHeight: number = this._getSignatureHeight(signatureWidth, signatureAspectRatio);
+    const signatureHeight: number = getSignatureHeight(signatureWidth, signatureAspectRatio);
 
     return (
       <section className={`${styles.signatureWebPart} ${this.props.hasTeamsContext ? styles.teams : ''}`}>
@@ -174,12 +147,12 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
           dialogContentProps={{
             title: this.state.activeDocument ? `Sign ${this.state.activeDocument.documentName || this.state.activeDocument.title || 'document'}` : 'Sign document'
           }}
-          modalProps={{ 
+          modalProps={{
             isBlocking: true,
             className: styles.dialogModal
           }}
-           minWidth="70vw"
-           maxWidth="1100px"
+          minWidth="70vw"
+          maxWidth="1100px"
         >
           <div className={styles.dialogContent}>
             <div className={styles.workspace}>
@@ -318,6 +291,21 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
             <DefaultButton text="Cancel" onClick={this._closeRejectDialog} disabled={this.state.isRejecting} />
           </DialogFooter>
         </Dialog>
+
+        <Dialog
+          hidden={!this.state.isApprovalSuccessDialogOpen}
+          onDismiss={this._closeApprovalSuccessDialog}
+          dialogContentProps={{
+            title: 'Document is approved'
+          }}
+          modalProps={{
+            isBlocking: true
+          }}
+        >
+          <DialogFooter>
+            <PrimaryButton text="OK" onClick={this._closeApprovalSuccessDialog} />
+          </DialogFooter>
+        </Dialog>
       </section>
     );
   }
@@ -361,7 +349,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       return;
     }
 
-    const signatureCanvas: HTMLCanvasElement | undefined = this._getTrimmedSignatureCanvas(signaturePad);
+    const signatureCanvas: HTMLCanvasElement | undefined = getTrimmedSignatureCanvas(signaturePad);
 
     if (!signatureCanvas) {
       this.setState({
@@ -547,6 +535,12 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  private readonly _closeApprovalSuccessDialog = (): void => {
+    this.setState({
+      isApprovalSuccessDialogOpen: false
+    });
+  };
+
   private readonly _approveDocument = async (): Promise<void> => {
     const activeDocument = this.state.activeDocument;
 
@@ -557,7 +551,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       return;
     }
 
-    const approvalUpdate = this._getApprovalUpdate(activeDocument.approvalStatus);
+    const approvalUpdate = getApprovalUpdate(activeDocument.approvalStatus);
 
     if (!approvalUpdate) {
       this.setState({
@@ -637,10 +631,11 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       this.setState({
         isDialogOpen: false,
         isRejectDialogOpen: false,
+        isApprovalSuccessDialogOpen: true,
         activeDocument: undefined,
         isApproving: false,
         rejectionComments: '',
-        statusMessage: `Document approved as ${approvalUpdate.approvalStatus}.`
+        statusMessage: 'Document is approved.'
       });
     } catch (error) {
       this.setState({
@@ -668,7 +663,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       return;
     }
 
-    const rejectionUpdate = this._getRejectionUpdate(activeDocument.approvalStatus);
+    const rejectionUpdate = getRejectionUpdate(activeDocument.approvalStatus);
 
     if (!rejectionUpdate) {
       this.setState({
@@ -696,7 +691,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
 
     this.setState({
-        isRejectDialogOpen: false,
+      isRejectDialogOpen: false,
       isRejecting: true,
       statusMessage: 'Submitting rejection...'
     });
@@ -747,37 +742,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
-  private _getListApiPath(listName: string, webAbsoluteUrl: string): { apiPath: string; displayName: string } {
-    const trimmed = listName.trim();
-    const normalizeServerRelativeUrl = (url: string): string => url.replace(/ /g, '%20');
-
-    if (/^https?:\/\//i.test(trimmed)) {
-      try {
-        const listUrl = new URL(trimmed);
-        const serverRelativeUrl = listUrl.pathname;
-        return {
-          apiPath: `web/GetList('${normalizeServerRelativeUrl(serverRelativeUrl).replace(/'/g, "''")}')`,
-          displayName: serverRelativeUrl.split('/').pop() || trimmed
-        };
-      } catch {
-        // fallback to title-based access
-      }
-    }
-
-    if (trimmed.indexOf('/') === 0) {
-      const serverRelativeUrl = normalizeServerRelativeUrl(trimmed);
-      return {
-        apiPath: `web/GetList('${serverRelativeUrl.replace(/'/g, "''")}')`,
-        displayName: serverRelativeUrl.split('/').pop() || trimmed
-      };
-    }
-
-    return {
-      apiPath: `web/lists/getbytitle('${trimmed.replace(/'/g, "''")}')`,
-      displayName: trimmed
-    };
-  }
-
   private readonly _loadDocumentListFromSharePoint = async (): Promise<void> => {
     const { siteUrl, taskListName, spHttpClient, webAbsoluteUrl } = this.props;
     const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
@@ -806,7 +770,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
 
     const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
-    const listInfo = this._getListApiPath(listName, trimmedSiteUrl);
+    const listInfo = getListApiPath(listName);
     const currentUserEmail = this.props.userEmail?.trim() || '';
     const signatoryFilter = currentUserEmail
       ? `&$filter=L1Signatory eq '${currentUserEmail.replace(/'/g, "''")}'`
@@ -897,7 +861,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       this.setState({
         documents: [],
         isDocumentsLoading: false,
-        statusMessage: `The SharePoint documents could not be loaded. ${this._getErrorMessage(error)}`
+        statusMessage: `The documents could not be loaded. ${this._getErrorMessage(error)}`
       });
     }
   };
@@ -925,7 +889,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
 
     this.setState({
       isLoading: true,
-      statusMessage: 'Loading document from SharePoint... ',
+      statusMessage: 'Loading document... ',
       placement: undefined
     });
 
@@ -1026,7 +990,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       }
 
       const fileResponse = await spHttpClient.get(
-        `${apiBaseUrl}/_api/web/GetFileByServerRelativeUrl('${this._normalizeServerRelativeUrlForApi(pdfAttachment.ServerRelativeUrl)}')/$value`,
+        `${apiBaseUrl}/_api/web/GetFileByServerRelativeUrl('${normalizeServerRelativeUrlForApi(pdfAttachment.ServerRelativeUrl)}')/$value`,
         SPHttpClient.configurations.v1,
         {
           headers: {
@@ -1052,7 +1016,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         pageCount,
         currentPageIndex: 0,
         isLoading: false,
-        statusMessage: `Loaded ${pageCount} page${pageCount === 1 ? '' : 's'} from SharePoint.`
+        statusMessage: ""//`Loaded ${pageCount} page${pageCount === 1 ? '' : 's'} from SharePoint.`
       });
     } catch (error) {
       this.setState({
@@ -1128,44 +1092,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   }
 
-  private _getApprovalUpdate(currentStatus?: string): { approvalStatus: string; comments: string } | undefined {
-    const normalizedStatus = (currentStatus || '').trim();
-
-    if (normalizedStatus === 'L1 Pending For Signature') {
-      return {
-        approvalStatus: 'L1 Signed',
-        comments: 'Approved by Level 1'
-      };
-    }
-
-    if (normalizedStatus === 'L2 Pending For Signature') {
-      return {
-        approvalStatus: 'L2 Signed',
-        comments: 'Approved by L2'
-      };
-    }
-
-    return undefined;
-  }
-
-  private _getRejectionUpdate(currentStatus?: string): { approvalStatus: string } | undefined {
-    const normalizedStatus = (currentStatus || '').trim();
-
-    if (normalizedStatus === 'L1 Pending For Signature') {
-      return {
-        approvalStatus: 'L1 Rejected'
-      };
-    }
-
-    if (normalizedStatus === 'L2 Pending For Signature') {
-      return {
-        approvalStatus: 'L2 Rejected'
-      };
-    }
-
-    return undefined;
-  }
-
   private readonly _createSignedPdfBytes = async (activeDocument: IDocumentListItem): Promise<Uint8Array> => {
     const { pdfBytes, placement, signatureDataUrl, signatureAspectRatio } = this.state;
 
@@ -1214,11 +1140,11 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       throw new Error('The PDF preview size is not available for signature placement.');
     }
 
-    const pngBytes = this._dataUrlToUint8Array(signatureDataUrl);
+    const pngBytes = dataUrlToUint8Array(signatureDataUrl);
     const signatureImage = await pdfDocument.embedPng(pngBytes);
     const pageWidth = page.getWidth();
     const pageHeight = page.getHeight();
-    const signatureHeight = this._getSignatureHeight(placement.width, signatureAspectRatio);
+    const signatureHeight = getSignatureHeight(placement.width, signatureAspectRatio);
     const scaleX = pageWidth / renderedWidth;
     const scaleY = pageHeight / renderedHeight;
     const x = placement.x * scaleX;
@@ -1249,7 +1175,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
 
     const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
-    const normalizedAttachmentUrl = this._normalizeServerRelativeUrlForApi(activeDocument.attachmentServerRelativeUrl);
+    const normalizedAttachmentUrl = normalizeServerRelativeUrlForApi(activeDocument.attachmentServerRelativeUrl);
 
     const fileResponse = await spHttpClient.get(
       `${apiBaseUrl}/_api/web/GetFileByServerRelativeUrl('${normalizedAttachmentUrl}')/$value`,
@@ -1274,7 +1200,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     activeDocument: IDocumentListItem,
     signedPdfBytes: Uint8Array
   ): Promise<void> => {
-    const currentAttachmentName = activeDocument.attachmentFileName || this._getFileNameFromServerRelativeUrl(activeDocument.attachmentServerRelativeUrl) || `${activeDocument.documentName || activeDocument.title || 'document'}.pdf`;
+    const currentAttachmentName = activeDocument.attachmentFileName || getFileNameFromServerRelativeUrl(activeDocument.attachmentServerRelativeUrl) || `${activeDocument.documentName || activeDocument.title || 'document'}.pdf`;
     const encodedAttachmentName = encodeURIComponent(currentAttachmentName);
 
     await this._deleteAttachmentFile(apiBaseUrl, listTitle, activeDocument.id, encodedAttachmentName);
@@ -1317,7 +1243,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
 
     try {
-      const signatureBytes = this._dataUrlToUint8Array(signatureDataUrl);
+      const signatureBytes = dataUrlToUint8Array(signatureDataUrl);
       const aspectRatio = await this._getImageAspectRatio(signatureDataUrl);
       const item = await this._getOrCreateSignatureMasterItem(apiBaseUrl, userEmail);
       const fileName = this._getSignatureFileName(userEmail);
@@ -1405,23 +1331,11 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
-  private _dataUrlToUint8Array(dataUrl: string): Uint8Array {
-    const base64 = dataUrl.split(',')[1] || '';
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-
-    return bytes;
-  }
-
   private _getCurrentSignatureDataUrl(): string | undefined {
     const signaturePad: SignatureCanvas | null = this._signatureRef.current;
 
     if (signaturePad && !signaturePad.isEmpty()) {
-      const trimmedCanvas = this._getTrimmedSignatureCanvas(signaturePad);
+      const trimmedCanvas = getTrimmedSignatureCanvas(signaturePad);
 
       if (trimmedCanvas) {
         return trimmedCanvas.toDataURL('image/png');
@@ -1530,7 +1444,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       }
 
       const fileResponse = await this.props.spHttpClient.get(
-        `${apiBaseUrl}/_api/web/GetFileByServerRelativeUrl('${this._normalizeServerRelativeUrlForApi(attachment.ServerRelativeUrl)}')/$value`,
+        `${apiBaseUrl}/_api/web/GetFileByServerRelativeUrl('${normalizeServerRelativeUrlForApi(attachment.ServerRelativeUrl)}')/$value`,
         SPHttpClient.configurations.v1,
         {
           headers: {
@@ -1544,7 +1458,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       }
 
       const bytes = new Uint8Array(await fileResponse.arrayBuffer());
-      const signatureDataUrl = this._uint8ArrayToDataUrl(bytes, 'image/png');
+      const signatureDataUrl = uint8ArrayToDataUrl(bytes, 'image/png');
       const aspectRatio = await this._getImageAspectRatio(signatureDataUrl);
 
       this.setState({
@@ -1563,16 +1477,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       });
     }
   };
-
-  private _uint8ArrayToDataUrl(bytes: Uint8Array, contentType: string): string {
-    let binary = '';
-
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-
-    return `data:${contentType};base64,${btoa(binary)}`;
-  }
 
   private async _tryGetSignatureMasterItem(
     apiBaseUrl: string,
@@ -1662,38 +1566,6 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       bytes[3] === 0x46;
   }
 
-  private _getFileNameFromServerRelativeUrl(serverRelativeUrl?: string): string | undefined {
-    if (!serverRelativeUrl) {
-      return undefined;
-    }
-
-    return serverRelativeUrl.substring(serverRelativeUrl.lastIndexOf('/') + 1) || undefined;
-  }
-
-  private _normalizeServerRelativeUrlForApi(serverRelativeUrl: string): string {
-    const normalizedSegments = serverRelativeUrl
-      .trim()
-      .split('/')
-      .map((segment: string, index: number) => {
-        if (index === 0 && segment === '') {
-          return '';
-        }
-
-        let decodedSegment = segment;
-
-        try {
-          decodedSegment = decodeURIComponent(segment);
-        } catch {
-          // Keep the original segment if it is not valid URI encoding.
-        }
-
-        return encodeURIComponent(decodedSegment);
-      })
-      .join('/');
-
-    return normalizedSegments.replace(/'/g, "''");
-  }
-
   private readonly _updateSharePointListItem = async (
     apiBaseUrl: string,
     listTitle: string,
@@ -1754,78 +1626,5 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     const items = (json && (json.value as Array<{ Id: number }>)) || [];
     return items.map((item: { Id: number }) => item.Id);
   };
-
-  private _getSignatureHeight(width: number, aspectRatio: number): number {
-    return Math.max(32, Math.round(width / aspectRatio));
-  }
-
-  private _getTrimmedSignatureCanvas(signaturePad: SignatureCanvas): HTMLCanvasElement | undefined {
-    try {
-      const sourceCanvas: HTMLCanvasElement = signaturePad.getCanvas();
-      const context: CanvasRenderingContext2D | null = sourceCanvas.getContext('2d');
-
-      if (!context) {
-        return undefined;
-      }
-
-      const imageData: ImageData = context.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
-      const data: Uint8ClampedArray = imageData.data;
-      let top: number = sourceCanvas.height;
-      let right: number = 0;
-      let bottom: number = 0;
-      let left: number = sourceCanvas.width;
-
-      for (let y: number = 0; y < sourceCanvas.height; y++) {
-        for (let x: number = 0; x < sourceCanvas.width; x++) {
-          const alphaIndex: number = ((y * sourceCanvas.width) + x) * 4 + 3;
-
-          if (data[alphaIndex] > 0) {
-            if (x < left) {
-              left = x;
-            }
-            if (x > right) {
-              right = x;
-            }
-            if (y < top) {
-              top = y;
-            }
-            if (y > bottom) {
-              bottom = y;
-            }
-          }
-        }
-      }
-
-      if (right < left || bottom < top) {
-        return undefined;
-      }
-
-      const trimmedCanvas: HTMLCanvasElement = document.createElement('canvas');
-      trimmedCanvas.width = right - left + 1;
-      trimmedCanvas.height = bottom - top + 1;
-
-      const trimmedContext: CanvasRenderingContext2D | null = trimmedCanvas.getContext('2d');
-
-      if (!trimmedContext) {
-        return undefined;
-      }
-
-      trimmedContext.drawImage(
-        sourceCanvas,
-        left,
-        top,
-        trimmedCanvas.width,
-        trimmedCanvas.height,
-        0,
-        0,
-        trimmedCanvas.width,
-        trimmedCanvas.height
-      );
-
-      return trimmedCanvas;
-    } catch {
-      return undefined;
-    }
-  }
 
 }
