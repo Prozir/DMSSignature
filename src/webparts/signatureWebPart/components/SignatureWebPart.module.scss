@@ -98,7 +98,7 @@
 
 .listContainer {
   width: 100%;
-  overflow-x: auto;
+  //overflow-x: auto;
   margin: 0;
   padding: 0;
 
@@ -122,7 +122,7 @@
 .documentsCards {
   display: grid;
   gap: 2%;
-  grid-template-columns: repeat(auto-fit, minmax(49%, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .documentCard {
@@ -147,7 +147,7 @@
 
 .documentCardTitle {
   color: #0f172a;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.4;
 }
@@ -181,7 +181,7 @@
 
 .documentCardValue {
   color: #0f172a;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
