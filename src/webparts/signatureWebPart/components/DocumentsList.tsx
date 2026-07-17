@@ -20,6 +20,7 @@ export interface IDocumentListItem {
   documentNumber?: string;
   trader?: string;
   accountCode?: string;
+  approverEmail?: string;
   approvalStatus?: string;
   comments?: string;
   isTaskActive?: boolean;

@@ -33,6 +33,9 @@ export interface ISignatureWebPartState {
   isDialogOpen: boolean;
   isRejectDialogOpen: boolean;
   isApprovalSuccessDialogOpen: boolean;
+  isTaskLinkMessageDialogOpen: boolean;
+  taskLinkMessageDialogTitle: string;
+  taskLinkMessageDialogText: string;
   isApproving: boolean;
   isRejecting: boolean;
   isSavingSignature: boolean;

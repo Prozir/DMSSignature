@@ -23,13 +23,33 @@ import {
   uint8ArrayToDataUrl
 } from './SignatureWebPartSignatureHelper';
 
+interface ISharePointDocumentItem {
+  Id: number;
+  Title?: string;
+  DocumentID?: string;
+  DocumentName?: string;
+  DocumentNumber?: string;
+  Trader?: string;
+  AccountCode?: string;
+  L1Signatory?: string;
+  ApprovalStatus?: string;
+  Comments?: string;
+  IsTaskActive?: boolean;
+  Created?: string;
+  Modified?: string;
+  AttachmentFiles?: Array<{ FileName: string; ServerRelativeUrl: string }>;
+}
+
 export default class SignatureWebPart extends React.Component<ISignatureWebPartProps, ISignatureWebPartState> {
   private static readonly _signatureMasterListName: string = 'Signature Master';
+  private static readonly _taskIdQueryParamName: string = 'TaskID';
   private readonly _canvasWrapRef: React.RefObject<HTMLDivElement> = React.createRef<HTMLDivElement>();
   private readonly _previewCanvasRef: React.RefObject<HTMLCanvasElement> = React.createRef<HTMLCanvasElement>();
   private readonly _signatureRef: React.RefObject<SignatureCanvas> = React.createRef<SignatureCanvas>();
   private _isSignaturePointerDown: boolean = false;
   private _resizeTimer: number | undefined;
+  private _hasHandledTaskIdDeepLink: boolean = false;
+  private _isHandlingTaskIdDeepLink: boolean = false;
 
   public constructor(props: ISignatureWebPartProps) {
     super(props);
@@ -49,6 +69,9 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       isDialogOpen: false,
       isRejectDialogOpen: false,
       isApprovalSuccessDialogOpen: false,
+      isTaskLinkMessageDialogOpen: false,
+      taskLinkMessageDialogTitle: '',
+      taskLinkMessageDialogText: '',
       isApproving: false,
       isRejecting: false,
       isSavingSignature: false,
@@ -307,6 +330,22 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
             <PrimaryButton text="OK" onClick={this._closeApprovalSuccessDialog} />
           </DialogFooter>
         </Dialog>
+
+        <Dialog
+          hidden={!this.state.isTaskLinkMessageDialogOpen}
+          onDismiss={this._acknowledgeTaskLinkMessageDialog}
+          dialogContentProps={{
+            title: this.state.taskLinkMessageDialogTitle,
+            subText: this.state.taskLinkMessageDialogText
+          }}
+          modalProps={{
+            isBlocking: true
+          }}
+        >
+          <DialogFooter>
+            <PrimaryButton text="OK" onClick={this._acknowledgeTaskLinkMessageDialog} />
+          </DialogFooter>
+        </Dialog>
       </section>
     );
   }
@@ -444,12 +483,26 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       return;
     }
 
+    const signatureDataUrlBeforeResize: string | undefined = this._getCurrentSignatureDataUrl();
+
     if (this._resizeTimer !== undefined) {
       window.clearTimeout(this._resizeTimer);
     }
 
     this._resizeTimer = window.setTimeout(() => {
-      this._renderCurrentPage().catch(() => {
+      this._renderCurrentPage().then(async () => {
+        if (!signatureDataUrlBeforeResize) {
+          return;
+        }
+
+        try {
+          await this._populateSignaturePad(signatureDataUrlBeforeResize);
+        } catch {
+          this.setState({
+            statusMessage: 'The signature preview could not be restored after resizing.'
+          });
+        }
+      }).catch(() => {
         this.setState({
           isRendering: false,
           statusMessage: 'The selected PDF page could not be resized.'
@@ -542,6 +595,16 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  private readonly _acknowledgeTaskLinkMessageDialog = (): void => {
+    this._removeTaskIdFromUrl();
+
+    this.setState({
+      isTaskLinkMessageDialogOpen: false,
+      taskLinkMessageDialogTitle: '',
+      taskLinkMessageDialogText: ''
+    });
+  };
+
   private readonly _approveDocument = async (): Promise<void> => {
     const activeDocument = this.state.activeDocument;
 
@@ -628,6 +691,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       }
 
       await this._loadDocumentListFromSharePoint();
+      this._removeTaskIdFromUrl();
 
       this.setState({
         isDialogOpen: false,
@@ -725,6 +789,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       }
 
       await this._loadDocumentListFromSharePoint();
+      this._removeTaskIdFromUrl();
 
       this.setState({
         isDialogOpen: false,
@@ -794,62 +859,11 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       }
 
       const itemsJson = await itemsResponse.json();
-
-      interface ISharePointDocumentItem {
-        Id: number;
-        Title?: string;
-        DocumentID?: string;
-        DocumentName?: string;
-        DocumentNumber?: string;
-        Trader?: string;
-        AccountCode?: string;
-        ApprovalStatus?: string;
-        Comments?: string;
-        IsTaskActive?: boolean;
-        Created?: string;
-        Modified?: string;
-        AttachmentFiles?: Array<{ FileName: string; ServerRelativeUrl: string }>;
-      }
-
       const items = (itemsJson && (itemsJson.value as Array<ISharePointDocumentItem>)) || [];
 
       const documents: IDocumentListItem[] = items
-        .map((item: ISharePointDocumentItem) => {
-          const attachmentFiles: Array<{ FileName: string; ServerRelativeUrl: string }> =
-            item.AttachmentFiles || [];
-          let pdfAttachment: { FileName: string; ServerRelativeUrl: string } | undefined;
-
-          for (let i = 0; i < attachmentFiles.length; i++) {
-            const file = attachmentFiles[i];
-            const fileName = file.FileName.toLowerCase();
-            if (fileName.length > 4 && fileName.substr(fileName.length - 4) === '.pdf') {
-              pdfAttachment = file;
-              break;
-            }
-          }
-
-          if (!pdfAttachment && attachmentFiles.length > 0) {
-            pdfAttachment = attachmentFiles[0];
-          }
-
-          return {
-            id: item.Id,
-            title: item.Title,
-            documentId: item.DocumentID,
-            documentName: item.DocumentName,
-            documentNumber: item.DocumentNumber,
-            trader: item.Trader,
-            accountCode: item.AccountCode,
-            approvalStatus: item.ApprovalStatus,
-            comments: item.Comments,
-            isTaskActive: item.IsTaskActive,
-            created: item.Created,
-            modified: item.Modified,
-            attachmentFileName: pdfAttachment ? pdfAttachment.FileName : undefined,
-            attachmentServerRelativeUrl: pdfAttachment ? pdfAttachment.ServerRelativeUrl : undefined
-          } as IDocumentListItem;
-        })
-        .filter((item: IDocumentListItem) => !!item.attachmentServerRelativeUrl);
+        .map((item: ISharePointDocumentItem) => this._mapSharePointDocumentItem(item))
+        .filter((item: IDocumentListItem | undefined): item is IDocumentListItem => !!item);
 
       this.setState({
         documents,
@@ -858,6 +872,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
           ? `No signed documents with PDF attachments were found in '${listName}'. Request URL: ${requestUrl}`
           : 'Select a document to open for signature.'
       });
+
+      await this._processTaskIdDeepLink(documents);
     } catch (error) {
       this.setState({
         documents: [],
@@ -865,6 +881,265 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         statusMessage: `The documents could not be loaded. ${this._getErrorMessage(error)}`
       });
     }
+  };
+
+  private readonly _mapSharePointDocumentItem = (item: ISharePointDocumentItem): IDocumentListItem | undefined => {
+    const attachmentFiles: Array<{ FileName: string; ServerRelativeUrl: string }> = item.AttachmentFiles || [];
+    let pdfAttachment: { FileName: string; ServerRelativeUrl: string } | undefined;
+
+    for (let i = 0; i < attachmentFiles.length; i++) {
+      const file = attachmentFiles[i];
+      const fileName = file.FileName.toLowerCase();
+      if (fileName.length > 4 && fileName.substr(fileName.length - 4) === '.pdf') {
+        pdfAttachment = file;
+        break;
+      }
+    }
+
+    if (!pdfAttachment && attachmentFiles.length > 0) {
+      pdfAttachment = attachmentFiles[0];
+    }
+
+    if (!pdfAttachment) {
+      return undefined;
+    }
+
+    return {
+      id: item.Id,
+      title: item.Title,
+      documentId: item.DocumentID,
+      documentName: item.DocumentName,
+      documentNumber: item.DocumentNumber,
+      trader: item.Trader,
+      accountCode: item.AccountCode,
+      approverEmail: item.L1Signatory,
+      approvalStatus: item.ApprovalStatus,
+      comments: item.Comments,
+      isTaskActive: item.IsTaskActive,
+      created: item.Created,
+      modified: item.Modified,
+      attachmentFileName: pdfAttachment.FileName,
+      attachmentServerRelativeUrl: pdfAttachment.ServerRelativeUrl
+    };
+  };
+
+  private readonly _getTaskIdFromQuery = (): { isPresent: boolean; value?: number } => {
+    if (typeof window === 'undefined') {
+      return { isPresent: false };
+    }
+
+    const queryString = window.location.search ? window.location.search.substring(1) : '';
+
+    if (!queryString) {
+      return { isPresent: false };
+    }
+
+    const queryPairs = queryString.split('&');
+    const taskIdQueryKey = SignatureWebPart._taskIdQueryParamName.toLowerCase();
+    let rawValue: string | undefined;
+
+    for (let i = 0; i < queryPairs.length; i++) {
+      const pair = queryPairs[i];
+
+      if (!pair) {
+        continue;
+      }
+
+      const equalSignIndex = pair.indexOf('=');
+      const rawKey = equalSignIndex === -1 ? pair : pair.substring(0, equalSignIndex);
+      const normalizedKey = this._safeDecodeQueryValue(rawKey).toLowerCase();
+
+      if (normalizedKey === taskIdQueryKey) {
+        rawValue = equalSignIndex === -1 ? '' : this._safeDecodeQueryValue(pair.substring(equalSignIndex + 1));
+        break;
+      }
+    }
+
+    if (rawValue === undefined) {
+      return { isPresent: false };
+    }
+
+    const normalizedRawValue = rawValue.trim();
+
+    if (!normalizedRawValue || !/^\d+$/.test(normalizedRawValue)) {
+      return { isPresent: true };
+    }
+
+    const parsedValue = parseInt(normalizedRawValue, 10);
+
+    if (parsedValue <= 0) {
+      return { isPresent: true };
+    }
+
+    return {
+      isPresent: true,
+      value: parsedValue
+    };
+  };
+
+  private readonly _removeTaskIdFromUrl = (): void => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const currentUrl = new URL(window.location.href);
+    const queryString = currentUrl.search ? currentUrl.search.substring(1) : '';
+
+    if (!queryString) {
+      return;
+    }
+
+    const queryPairs = queryString.split('&');
+    const taskIdQueryKey = SignatureWebPart._taskIdQueryParamName.toLowerCase();
+    const nextPairs: string[] = [];
+    let removedTaskId = false;
+
+    for (let i = 0; i < queryPairs.length; i++) {
+      const pair = queryPairs[i];
+
+      if (!pair) {
+        continue;
+      }
+
+      const equalSignIndex = pair.indexOf('=');
+      const rawKey = equalSignIndex === -1 ? pair : pair.substring(0, equalSignIndex);
+      const normalizedKey = this._safeDecodeQueryValue(rawKey).toLowerCase();
+
+      if (normalizedKey === taskIdQueryKey) {
+        removedTaskId = true;
+        continue;
+      }
+
+      nextPairs.push(pair);
+    }
+
+    if (!removedTaskId) {
+      return;
+    }
+
+    const nextQuery = nextPairs.join('&');
+    const nextUrl = `${currentUrl.pathname}${nextQuery ? `?${nextQuery}` : ''}${currentUrl.hash}`;
+    window.history.replaceState(window.history.state, document.title, nextUrl);
+  };
+
+  private readonly _safeDecodeQueryValue = (value: string): string => {
+    const normalized = value.replace(/\+/g, ' ');
+
+    try {
+      return decodeURIComponent(normalized);
+    } catch {
+      return normalized;
+    }
+  };
+
+  private readonly _showTaskLinkMessageDialog = (title: string, text: string): void => {
+    this.setState({
+      isTaskLinkMessageDialogOpen: true,
+      taskLinkMessageDialogTitle: title,
+      taskLinkMessageDialogText: text
+    });
+  };
+
+  private readonly _processTaskIdDeepLink = async (documents: IDocumentListItem[]): Promise<void> => {
+    if (this._hasHandledTaskIdDeepLink || this._isHandlingTaskIdDeepLink) {
+      return;
+    }
+
+    const taskIdFromQuery = this._getTaskIdFromQuery();
+
+    // No TaskID means normal page load path with no deep-link behavior.
+    if (!taskIdFromQuery.isPresent) {
+      return;
+    }
+
+    this._isHandlingTaskIdDeepLink = true;
+
+    try {
+      if (!taskIdFromQuery.value) {
+        this._hasHandledTaskIdDeepLink = true;
+        this._showTaskLinkMessageDialog('Invalid Task Link', 'The TaskID query string value is invalid.');
+        return;
+      }
+
+      const taskId = taskIdFromQuery.value;
+      const currentUserEmail = (this.props.userEmail || '').trim().toLowerCase();
+
+      if (!currentUserEmail) {
+        this._hasHandledTaskIdDeepLink = true;
+        this._showTaskLinkMessageDialog('Unauthorized', 'Unable to validate approver because the current user email is not available.');
+        return;
+      }
+
+      let targetTask: IDocumentListItem | undefined;
+
+      for (let i = 0; i < documents.length; i++) {
+        if (documents[i].id === taskId) {
+          targetTask = documents[i];
+          break;
+        }
+      }
+
+      if (!targetTask) {
+        targetTask = await this._getTaskItemByIdFromSharePoint(taskId);
+      }
+
+      if (!targetTask) {
+        this._hasHandledTaskIdDeepLink = true;
+        this._showTaskLinkMessageDialog('Task Not Found', `TaskID ${taskId} was not found.`);
+        return;
+      }
+
+      const approverEmail = (targetTask.approverEmail || '').trim().toLowerCase();
+
+      if (!approverEmail || approverEmail !== currentUserEmail) {
+        this._hasHandledTaskIdDeepLink = true;
+        this._showTaskLinkMessageDialog('Unauthorized', 'You are not the approver for this task.');
+        return;
+      }
+
+      this._hasHandledTaskIdDeepLink = true;
+      this._removeTaskIdFromUrl();
+      await this._openDocument(targetTask);
+    } catch (error) {
+      this._hasHandledTaskIdDeepLink = true;
+      this._showTaskLinkMessageDialog('Task Link Error', `The task link could not be processed. ${this._getErrorMessage(error)}`.trim());
+    } finally {
+      this._isHandlingTaskIdDeepLink = false;
+    }
+  };
+
+  private readonly _getTaskItemByIdFromSharePoint = async (taskId: number): Promise<IDocumentListItem | undefined> => {
+    const { siteUrl, taskListName, spHttpClient, webAbsoluteUrl } = this.props;
+    const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
+    const listName: string | undefined = taskListName ? taskListName.trim() : undefined;
+
+    if (!trimmedSiteUrl || !listName) {
+      return undefined;
+    }
+
+    const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
+    const listInfo = getListApiPath(listName);
+    const requestUrl = `${apiBaseUrl}/_api/${listInfo.apiPath}/items(${taskId})?$select=Id,Title,DocumentID,DocumentName,DocumentNumber,Trader,AccountCode,ApprovalStatus,Comments,IsTaskActive,Created,Modified,L1Signatory,AttachmentFiles&$expand=AttachmentFiles`;
+    const response = await spHttpClient.get(
+      requestUrl,
+      SPHttpClient.configurations.v1,
+      {
+        headers: {
+          Accept: 'application/json;odata=nometadata'
+        }
+      }
+    );
+
+    if (response.status === 404) {
+      return undefined;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Unable to read task ${taskId}. Status ${response.status}`);
+    }
+
+    const item = await response.json() as ISharePointDocumentItem;
+    return this._mapSharePointDocumentItem(item);
   };
 
   private readonly _loadDocumentFromSharePoint = async (itemId?: number, attachmentRelativeUrl?: string): Promise<void> => {
@@ -1371,6 +1646,26 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   }
 
+  private _syncSignaturePadCanvasSize(signaturePad: SignatureCanvas): HTMLCanvasElement {
+    const targetCanvas = signaturePad.getCanvas();
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    const nextWidth = Math.max(1, Math.round(targetCanvas.offsetWidth * ratio));
+    const nextHeight = Math.max(1, Math.round(targetCanvas.offsetHeight * ratio));
+
+    if (targetCanvas.width !== nextWidth || targetCanvas.height !== nextHeight) {
+      targetCanvas.width = nextWidth;
+      targetCanvas.height = nextHeight;
+
+      const resizedContext = targetCanvas.getContext('2d');
+
+      if (resizedContext) {
+        resizedContext.scale(ratio, ratio);
+      }
+    }
+
+    return targetCanvas;
+  }
+
   private async _populateSignaturePad(signatureDataUrl: string): Promise<void> {
     const signaturePad: SignatureCanvas | null = this._signatureRef.current;
 
@@ -1379,7 +1674,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
 
     const sourceImage = await this._loadImageFromDataUrl(signatureDataUrl);
-    const targetCanvas = signaturePad.getCanvas();
+    const targetCanvas = this._syncSignaturePadCanvasSize(signaturePad);
     const context = targetCanvas.getContext('2d');
 
     if (!context) {
@@ -1389,15 +1684,24 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     signaturePad.clear();
 
     const padding = 8;
-    const availableWidth = Math.max(1, targetCanvas.width - (padding * 2));
-    const availableHeight = Math.max(1, targetCanvas.height - (padding * 2));
-    const widthScale = availableWidth / sourceImage.naturalWidth;
-    const heightScale = availableHeight / sourceImage.naturalHeight;
-    const scale = Math.min(widthScale, heightScale, 1);
-    const drawWidth = sourceImage.naturalWidth * scale;
-    const drawHeight = sourceImage.naturalHeight * scale;
-    const offsetX = (targetCanvas.width - drawWidth) / 2;
-    const offsetY = (targetCanvas.height - drawHeight) / 2;
+    const canvasWidth = Math.max(1, targetCanvas.offsetWidth);
+    const canvasHeight = Math.max(1, targetCanvas.offsetHeight);
+    const availableWidth = Math.max(1, canvasWidth - (padding * 2));
+    const availableHeight = Math.max(1, canvasHeight - (padding * 2));
+    const imageAspectRatio = sourceImage.naturalWidth > 0 && sourceImage.naturalHeight > 0
+      ? sourceImage.naturalWidth / sourceImage.naturalHeight
+      : 2.8;
+
+    let drawWidth = availableWidth;
+    let drawHeight = drawWidth / imageAspectRatio;
+
+    if (drawHeight > availableHeight) {
+      drawHeight = availableHeight;
+      drawWidth = drawHeight * imageAspectRatio;
+    }
+
+    const offsetX = (canvasWidth - drawWidth) / 2;
+    const offsetY = (canvasHeight - drawHeight) / 2;
 
     context.drawImage(sourceImage, offsetX, offsetY, drawWidth, drawHeight);
   }
