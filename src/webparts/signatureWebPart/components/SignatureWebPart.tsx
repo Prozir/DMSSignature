@@ -51,6 +51,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
   private _hasHandledTaskIdDeepLink: boolean = false;
   private _isHandlingTaskIdDeepLink: boolean = false;
 
+  // Set default values used by the component when it first loads.
   public constructor(props: ISignatureWebPartProps) {
     super(props);
 
@@ -82,6 +83,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     };
   }
 
+  // Reload data or page preview when key props or state values change.
   public componentDidUpdate(
     previousProps: ISignatureWebPartProps,
     previousState: ISignatureWebPartState
@@ -111,6 +113,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   }
 
+  // Add listeners and load the initial document list after mount.
   public componentDidMount(): void {
     window.addEventListener('resize', this._handleWindowResize);
 
@@ -122,6 +125,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   }
 
+  // Remove listeners and timers before the component is destroyed.
   public componentWillUnmount(): void {
     window.removeEventListener('resize', this._handleWindowResize);
 
@@ -130,6 +134,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   }
 
+  // Render the document list, dialogs, controls, and PDF preview area.
   public render(): React.ReactElement<ISignatureWebPartProps> {
     const {
       currentPageIndex,
@@ -350,21 +355,25 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     );
   }
 
+  // Mark that drawing has started on the signature pad.
   private readonly _handleSignaturePointerDown = (): void => {
     this._isSignaturePointerDown = true;
   };
 
+  // Mark that drawing has ended and reset signature pad interaction.
   private readonly _handleSignaturePointerUp = (): void => {
     this._isSignaturePointerDown = false;
     this._resetSignaturePadInteraction();
   };
 
+  // Reset hover state if the mouse moves without drawing pressed.
   private readonly _handleSignatureHoverGuard = (event: React.MouseEvent<HTMLCanvasElement>): void => {
     if (!this._isSignaturePointerDown && event.buttons === 0) {
       this._resetSignaturePadInteraction();
     }
   };
 
+  // Rebind signature pad handlers to avoid stuck drawing behavior.
   private readonly _resetSignaturePadInteraction = (): void => {
     const signaturePad = this._signatureRef.current?.getSignaturePad?.();
 
@@ -376,6 +385,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     signaturePad.on();
   };
 
+  // Capture and trim the signature image from the signature pad.
   private readonly _captureSignature = (): void => {
     const signaturePad: SignatureCanvas | null = this._signatureRef.current;
 
@@ -409,6 +419,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Clear the signature pad and remove current signature placement.
   private readonly _clearSignature = (): void => {
     const signaturePad: SignatureCanvas | null = this._signatureRef.current;
 
@@ -424,6 +435,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Update signature width and keep placement width in sync.
   private readonly _handleSignatureWidthChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
     const width: number = Number(event.target.value);
     const placement: ISignaturePlacement | undefined = this.state.placement
@@ -439,6 +451,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Place the signature on the PDF preview where the user clicks.
   private readonly _handlePreviewClick = (event: React.MouseEvent<HTMLCanvasElement>): void => {
     const canvas: HTMLCanvasElement | null = this._previewCanvasRef.current;
 
@@ -466,18 +479,21 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Move to the previous PDF page.
   private readonly _goToPreviousPage = (): void => {
     this.setState(previousState => ({
       currentPageIndex: Math.max(0, previousState.currentPageIndex - 1)
     }));
   };
 
+  // Move to the next PDF page.
   private readonly _goToNextPage = (): void => {
     this.setState(previousState => ({
       currentPageIndex: Math.min(previousState.pageCount - 1, previousState.currentPageIndex + 1)
     }));
   };
 
+  // Re-render the current page and restore signature preview after resize.
   private readonly _handleWindowResize = (): void => {
     if (!this.state.pdfDocument) {
       return;
@@ -511,6 +527,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }, 150);
   };
 
+  // Open a selected document and load its PDF and saved signature.
   private readonly _openDocument = async (item: IDocumentListItem): Promise<void> => {
     if (!item.attachmentServerRelativeUrl) {
       this.setState({
@@ -556,6 +573,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Close the main dialog and clear active document state.
   private readonly _closeDialog = (): void => {
     this._blurActiveElement();
 
@@ -568,6 +586,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Open the rejection dialog for the active document.
   private readonly _openRejectDialog = (): void => {
     if (!this.state.activeDocument) {
       this.setState({
@@ -582,6 +601,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Close the rejection dialog and clear rejection comments.
   private readonly _closeRejectDialog = (): void => {
     this.setState({
       isRejectDialogOpen: false,
@@ -589,12 +609,14 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Close the approval success message dialog.
   private readonly _closeApprovalSuccessDialog = (): void => {
     this.setState({
       isApprovalSuccessDialogOpen: false
     });
   };
 
+  // Confirm the task link message and clean up URL state.
   private readonly _acknowledgeTaskLinkMessageDialog = (): void => {
     this._removeTaskIdFromUrl();
 
@@ -605,6 +627,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Sign the PDF, update task status, and complete approval flow.
   private readonly _approveDocument = async (): Promise<void> => {
     const activeDocument = this.state.activeDocument;
 
@@ -710,6 +733,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Submit rejection comments and update task status in SharePoint.
   private readonly _rejectDocument = async (): Promise<void> => {
     const activeDocument = this.state.activeDocument;
     const rejectionComments = this.state.rejectionComments.trim();
@@ -808,6 +832,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Load assigned documents from SharePoint for the current user.
   private readonly _loadDocumentListFromSharePoint = async (): Promise<void> => {
     const { siteUrl, taskListName, spHttpClient, webAbsoluteUrl } = this.props;
     const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
@@ -883,6 +908,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Convert one SharePoint item to the UI document model.
   private readonly _mapSharePointDocumentItem = (item: ISharePointDocumentItem): IDocumentListItem | undefined => {
     const attachmentFiles: Array<{ FileName: string; ServerRelativeUrl: string }> = item.AttachmentFiles || [];
     let pdfAttachment: { FileName: string; ServerRelativeUrl: string } | undefined;
@@ -923,6 +949,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     };
   };
 
+  // Read and validate TaskID from the page query string.
   private readonly _getTaskIdFromQuery = (): { isPresent: boolean; value?: number } => {
     if (typeof window === 'undefined') {
       return { isPresent: false };
@@ -977,6 +1004,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     };
   };
 
+  // Remove TaskID from the URL without reloading the page.
   private readonly _removeTaskIdFromUrl = (): void => {
     if (typeof window === 'undefined') {
       return;
@@ -1022,6 +1050,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     window.history.replaceState(window.history.state, document.title, nextUrl);
   };
 
+  // Decode query text safely and handle invalid encoded values.
   private readonly _safeDecodeQueryValue = (value: string): string => {
     const normalized = value.replace(/\+/g, ' ');
 
@@ -1032,6 +1061,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Show a simple dialog message for task link status.
   private readonly _showTaskLinkMessageDialog = (title: string, text: string): void => {
     this.setState({
       isTaskLinkMessageDialogOpen: true,
@@ -1040,6 +1070,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Process TaskID link, validate user, and auto-open the task.
   private readonly _processTaskIdDeepLink = async (documents: IDocumentListItem[]): Promise<void> => {
     if (this._hasHandledTaskIdDeepLink || this._isHandlingTaskIdDeepLink) {
       return;
@@ -1108,6 +1139,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Get one task item by ID directly from SharePoint.
   private readonly _getTaskItemByIdFromSharePoint = async (taskId: number): Promise<IDocumentListItem | undefined> => {
     const { siteUrl, taskListName, spHttpClient, webAbsoluteUrl } = this.props;
     const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
@@ -1142,6 +1174,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     return this._mapSharePointDocumentItem(item);
   };
 
+  // Load PDF bytes from SharePoint and prepare PDF viewer state.
   private readonly _loadDocumentFromSharePoint = async (itemId?: number, attachmentRelativeUrl?: string): Promise<void> => {
     const { siteUrl, taskListName, spHttpClient, webAbsoluteUrl } = this.props;
     const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
@@ -1308,6 +1341,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Render the selected PDF page to the preview canvas.
   private async _renderCurrentPage(): Promise<void> {
     const { pdfDocument, currentPageIndex } = this.state;
     const canvasWrap: HTMLDivElement | null = this._canvasWrapRef.current;
@@ -1354,12 +1388,14 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
   }
 
 
+  // Return a readable error message from unknown error values.
   private _getErrorMessage(error: unknown): string {
     return error instanceof Error && error.message
       ? error.message
       : '';
   }
 
+  // Remove focus from current input to avoid stale UI focus.
   private _blurActiveElement(): void {
     const activeElement = document.activeElement;
 
@@ -1368,6 +1404,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   }
 
+  // Build signed PDF bytes by stamping the placed signature.
   private readonly _createSignedPdfBytes = async (activeDocument: IDocumentListItem): Promise<Uint8Array> => {
     const { pdfBytes, placement, signatureDataUrl, signatureAspectRatio } = this.state;
 
@@ -1396,6 +1433,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Draw signature image on the selected PDF page coordinates.
   private readonly _stampSignatureOnPdf = async (
     sourcePdfBytes: Uint8Array,
     placement: ISignaturePlacement,
@@ -1438,6 +1476,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     return await pdfDocument.save();
   };
 
+  // Reload source PDF bytes when they are not available in state.
   private readonly _loadPdfBytesForApproval = async (activeDocument: IDocumentListItem): Promise<Uint8Array | undefined> => {
     if (this.state.pdfBytes && this.state.pdfBytes.length > 0) {
       return this.state.pdfBytes;
@@ -1470,6 +1509,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     return new Uint8Array(await fileResponse.arrayBuffer());
   };
 
+  // Replace existing list attachment with newly signed PDF file.
   private readonly _replaceCurrentAttachmentWithPdf = async (
     apiBaseUrl: string,
     listTitle: string,
@@ -1483,6 +1523,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     await this._addAttachmentFile(apiBaseUrl, listTitle, activeDocument.id, currentAttachmentName, signedPdfBytes);
   };
 
+  // Save current signature image to Signature Master list.
   private readonly _saveSignatureToSharePoint = async (): Promise<void> => {
     const { siteUrl, webAbsoluteUrl } = this.props;
     const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
@@ -1558,6 +1599,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Delete one attachment file from a SharePoint list item.
   private readonly _deleteAttachmentFile = async (
     apiBaseUrl: string,
     listTitle: string,
@@ -1581,6 +1623,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Upload one attachment file to a SharePoint list item.
   private readonly _addAttachmentFile = async (
     apiBaseUrl: string,
     listTitle: string,
@@ -1607,6 +1650,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Get signature image from pad if possible, else use saved state.
   private _getCurrentSignatureDataUrl(): string | undefined {
     const signaturePad: SignatureCanvas | null = this._signatureRef.current;
 
@@ -1621,11 +1665,13 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     return this.state.signatureDataUrl || undefined;
   }
 
+  // Build a safe PNG file name using the user email.
   private _getSignatureFileName(userEmail: string): string {
     const sanitizedEmail = userEmail.replace(/[^a-zA-Z0-9._-]/g, '_');
     return `signature_${sanitizedEmail}.png`;
   }
 
+  // Read image size and return width-to-height ratio.
   private async _getImageAspectRatio(dataUrl: string): Promise<number> {
     const image = await this._loadImageFromDataUrl(dataUrl);
 
@@ -1636,6 +1682,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     return image.naturalWidth / image.naturalHeight;
   }
 
+  // Load an image element from a data URL string.
   private _loadImageFromDataUrl(dataUrl: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
       const image = new Image();
@@ -1646,6 +1693,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   }
 
+  // Resize signature pad canvas to match display and device ratio.
   private _syncSignaturePadCanvasSize(signaturePad: SignatureCanvas): HTMLCanvasElement {
     const targetCanvas = signaturePad.getCanvas();
     const ratio = Math.max(window.devicePixelRatio || 1, 1);
@@ -1666,6 +1714,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     return targetCanvas;
   }
 
+  // Draw saved signature image into the signature pad canvas.
   private async _populateSignaturePad(signatureDataUrl: string): Promise<void> {
     const signaturePad: SignatureCanvas | null = this._signatureRef.current;
 
@@ -1706,6 +1755,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     context.drawImage(sourceImage, offsetX, offsetY, drawWidth, drawHeight);
   }
 
+  // Load saved signature for current user from Signature Master.
   private readonly _loadSavedSignatureFromSharePoint = async (): Promise<void> => {
     const { siteUrl, webAbsoluteUrl } = this.props;
     const userEmail: string = (this.props.userEmail || '').trim();
@@ -1783,6 +1833,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Try to find the user's Signature Master item.
   private async _tryGetSignatureMasterItem(
     apiBaseUrl: string,
     userEmail: string
@@ -1821,6 +1872,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     };
   }
 
+  // Get existing Signature Master item or create a new one.
   private async _getOrCreateSignatureMasterItem(
     apiBaseUrl: string,
     userEmail: string
@@ -1862,6 +1914,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     };
   }
 
+  // Check if bytes start with the PDF file signature header.
   private _isPdfByteArray(bytes?: Uint8Array): boolean {
     return !!bytes &&
       bytes.length >= 4 &&
@@ -1871,6 +1924,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       bytes[3] === 0x46;
   }
 
+  // Update fields on a SharePoint list item.
   private readonly _updateSharePointListItem = async (
     apiBaseUrl: string,
     listTitle: string,
@@ -1896,6 +1950,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     }
   };
 
+  // Keep rejection comment text in component state.
   private readonly _handleRejectionCommentsChange = (
     event: React.ChangeEvent<HTMLTextAreaElement>
   ): void => {
@@ -1904,6 +1959,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     });
   };
 
+  // Find other items that share the same document IDs.
   private readonly _getRelatedDocumentItems = async (
     apiBaseUrl: string,
     listTitle: string,
