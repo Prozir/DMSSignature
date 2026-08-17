@@ -44,7 +44,7 @@ export function getApprovalUpdate(currentStatus?: string): IApprovalUpdate | und
   if (normalizedStatus === 'L2 Pending For Signature') {
     return {
       approvalStatus: 'L2 Signed',
-      comments: 'Approved by L2'
+      comments: 'Approved by Level 2'
     };
   }
 

@@ -81,6 +81,14 @@ const renderActionIcon = (item: IDocumentListItem, onOpenItem: (item: IDocumentL
 
 const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] => [
   {
+    key: 'columnTaskId',
+    name: 'Task ID',
+    fieldName: 'id',
+    minWidth: 70,
+    isResizable: true,
+    onRender: (item: IDocumentListItem) => item.id
+  },
+  {
     key: 'columnDocumentName',
     name: 'Document Name',
     fieldName: 'documentName',
@@ -150,14 +158,14 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
   const [selectedStatus, setSelectedStatus] = React.useState<StatusFilter>('Pending');
 
   const filteredItems: IDocumentListItem[] = React.useMemo(() => {
-    if (selectedStatus === 'Total') {
-      return props.items;
-    }
-
     const normalizedStatus: string = selectedStatus.toLowerCase();
-    return props.items.filter((item: IDocumentListItem) =>
-      (item.approvalStatus || '').toLowerCase().indexOf(normalizedStatus) !== -1
-    );
+    const statusFiltered: IDocumentListItem[] = selectedStatus === 'Total'
+      ? props.items
+      : props.items.filter((item: IDocumentListItem) =>
+          (item.approvalStatus || '').toLowerCase().indexOf(normalizedStatus) !== -1
+        );
+
+    return statusFiltered.slice().sort((a: IDocumentListItem, b: IDocumentListItem) => b.id - a.id);
   }, [props.items, selectedStatus]);
 
   if (props.isLoading) {
@@ -189,6 +197,10 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
               </div>
 
               <div className={styles.documentCardBody}>
+                <div className={styles.documentCardField}>
+                  <span className={styles.documentCardLabel}>Task ID</span>
+                  <span className={styles.documentCardValue}>{item.id}</span>
+                </div>
                 <div className={styles.documentCardField}>
                   <span className={styles.documentCardLabel}>Document Number</span>
                   <span className={styles.documentCardValue}>{item.documentNumber || '-'}</span>

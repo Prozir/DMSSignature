@@ -693,7 +693,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       await this._updateSharePointListItem(apiBaseUrl, listTitle, activeDocument.id, {
         ApprovalStatus: approvalUpdate.approvalStatus,
         Comments: approvalUpdate.comments,
-        IsTaskActive: false
+        IsTaskActive: false,
+        ActionTakenOn: new Date().toISOString()
       });
 
       if (activeDocument.documentId && activeDocument.documentNumber) {
@@ -702,7 +703,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
           listTitle,
           activeDocument.documentId,
           activeDocument.documentNumber,
-          activeDocument.id
+          activeDocument.id,
+          activeDocument.approvalStatus || ''
         );
 
         for (let i = 0; i < relatedItems.length; i++) {
@@ -792,7 +794,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       await this._updateSharePointListItem(apiBaseUrl, listTitle, activeDocument.id, {
         ApprovalStatus: rejectionUpdate.approvalStatus,
         Comments: rejectionComments,
-        IsTaskActive: false
+        IsTaskActive: false,
+        ActionTakenOn: new Date().toISOString()
       });
 
       if (activeDocument.documentId && activeDocument.documentNumber) {
@@ -801,7 +804,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
           listTitle,
           activeDocument.documentId,
           activeDocument.documentNumber,
-          activeDocument.id
+          activeDocument.id,
+          activeDocument.approvalStatus || ''
         );
 
         for (let i = 0; i < relatedItems.length; i++) {
@@ -1519,8 +1523,9 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     const currentAttachmentName = activeDocument.attachmentFileName || getFileNameFromServerRelativeUrl(activeDocument.attachmentServerRelativeUrl) || `${activeDocument.documentName || activeDocument.title || 'document'}.pdf`;
     const encodedAttachmentName = encodeURIComponent(currentAttachmentName);
 
-    await this._deleteAttachmentFile(apiBaseUrl, listTitle, activeDocument.id, encodedAttachmentName);
-    await this._addAttachmentFile(apiBaseUrl, listTitle, activeDocument.id, currentAttachmentName, signedPdfBytes);
+    // Overwrite the existing attachment's bytes in place (single request) instead of delete+add,
+    // which avoids bumping the list item version twice for one signing action.
+    await this._updateAttachmentFileContent(apiBaseUrl, listTitle, activeDocument.id, encodedAttachmentName, signedPdfBytes);
   };
 
   // Save current signature image to Signature Master list.
@@ -1647,6 +1652,33 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
 
     if (!response.ok) {
       throw new Error(`Unable to upload the signed attachment. Status ${response.status}`);
+    }
+  };
+
+  // Overwrite an existing attachment's content in place, without a delete+add round trip.
+  private readonly _updateAttachmentFileContent = async (
+    apiBaseUrl: string,
+    listTitle: string,
+    itemId: number,
+    encodedAttachmentName: string,
+    fileBytes: Uint8Array,
+    contentType: string = 'application/pdf'
+  ): Promise<void> => {
+    const response = await this.props.spHttpClient.post(
+      `${apiBaseUrl}/_api/web/lists/getbytitle('${listTitle}')/items(${itemId})/AttachmentFiles('${encodedAttachmentName}')/$value`,
+      SPHttpClient.configurations.v1,
+      {
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'Content-Type': contentType,
+          'X-HTTP-Method': 'PUT'
+        },
+        body: new Blob([fileBytes], { type: contentType })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Unable to update the existing attachment. Status ${response.status}`);
     }
   };
 
@@ -1965,12 +1997,14 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     listTitle: string,
     documentId: string,
     documentNumber: string,
-    currentItemId: number
+    currentItemId: number,
+    currentApprovalStatus: string
   ): Promise<number[]> => {
     const safeDocumentId = documentId.replace(/'/g, "''");
     const safeDocumentNumber = documentNumber.replace(/'/g, "''");
+    const safeApprovalStatus = currentApprovalStatus.replace(/'/g, "''");
     const response = await this.props.spHttpClient.get(
-      `${apiBaseUrl}/_api/web/lists/getbytitle('${listTitle}')/items?$select=Id&$filter=DocumentID eq '${safeDocumentId}' and DocumentNumber eq '${safeDocumentNumber}' and Id ne ${currentItemId}&$top=500`,
+      `${apiBaseUrl}/_api/web/lists/getbytitle('${listTitle}')/items?$select=Id&$filter=DocumentID eq '${safeDocumentId}' and DocumentNumber eq '${safeDocumentNumber}' and ApprovalStatus eq '${safeApprovalStatus}' and Id ne ${currentItemId}&$top=500`,
       SPHttpClient.configurations.v1,
       {
         headers: {
