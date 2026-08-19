@@ -17,12 +17,14 @@ const getDateTimeValue = (value?: string): string => value ? new Date(value).toL
 const getDocumentName = (document?: IDocumentListItem): string => document ? document.documentName || document.title || 'document' : 'document';
 
 export default function ApprovalHistory(props: IApprovalHistoryProps): React.ReactElement {
+  const itemstoview = props.items.filter((item:IApprovalHistoryItem) => (item.approvalStatus || '').trim().length>0);
+  //<span>Document Name: {props.document.documentNumber || '-'}</span>
   return (
     <Dialog
       hidden={!props.isOpen}
       onDismiss={props.onDismiss}
       dialogContentProps={{
-        title: `Approval history: ${getDocumentName(props.document)}`
+        title: `Approval history : ${props.document?.documentNumber || ''}` //Approval history : ${getDocumentName(props.document)}`
       }}
       modalProps={{ isBlocking: false }}
       minWidth="min(90vw, 900px)"
@@ -31,8 +33,7 @@ export default function ApprovalHistory(props: IApprovalHistoryProps): React.Rea
       <div className={styles.approvalHistoryContent}>
         {props.document && (
           <div className={styles.approvalHistoryIdentity}>
-            <span>Document ID: {props.document.documentId || '-'}</span>
-            <span>Document Number: {props.document.documentNumber || '-'}</span>
+            <span>Document Name : {getDocumentName(props.document)}</span>
           </div>
         )}
 
@@ -42,11 +43,13 @@ export default function ApprovalHistory(props: IApprovalHistoryProps): React.Rea
           <div className={styles.approvalHistoryMessage} role="alert">{props.errorMessage}</div>
         )}
 
-        {!props.isLoading && !props.errorMessage && props.items.length === 0 && (
+        
+        {!props.isLoading && !props.errorMessage && itemstoview.length === 0 && (
           <div className={styles.approvalHistoryMessage}>No approval history was found for this document.</div>
         )}
 
-        {!props.isLoading && !props.errorMessage && props.items.length > 0 && (
+        
+         {!props.isLoading && !props.errorMessage && itemstoview.length > 0 && ( 
           <div className={styles.approvalHistoryTableWrap}>
             <table className={styles.approvalHistoryTable}>
               <thead>
@@ -59,7 +62,7 @@ export default function ApprovalHistory(props: IApprovalHistoryProps): React.Rea
                 </tr>
               </thead>
               <tbody>
-                {props.items.map((item: IApprovalHistoryItem) => (
+                {itemstoview.map((item: IApprovalHistoryItem) => (
                   <tr key={item.id}>
                     <td>{item.approvalStatus || '-'}</td>
                     <td>{item.approvalRecipient || '-'}</td>

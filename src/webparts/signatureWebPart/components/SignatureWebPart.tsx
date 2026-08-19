@@ -157,13 +157,16 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     } = this.state;
 
     const canPlaceSignature: boolean = !!pageSize && signatureDataUrl.length > 0 && !isRendering;
-    const canApprove: boolean = !!this.state.activeDocument && !!placement && signatureDataUrl.length > 0 && !isLoading && !isRendering && !this.state.isApproving;
-    const canReject: boolean = !!this.state.activeDocument && !this.state.isRejecting && !this.state.isApproving;
+    const isActiveDocumentPending: boolean = (this.state.activeDocument?.approvalStatus || '').toLowerCase().indexOf('pending') !== -1;
+    const canApprove: boolean = !!this.state.activeDocument && isActiveDocumentPending && !!placement && signatureDataUrl.length > 0 && !isLoading && !isRendering && !this.state.isApproving;
+    const canReject: boolean = !!this.state.activeDocument && isActiveDocumentPending && !this.state.isRejecting && !this.state.isApproving;
     const canSaveSignature: boolean = !this.state.isSavingSignature && !this.state.isLoadingSavedSignature;
     const canSubmitReject: boolean = this.state.rejectionComments.trim().length > 0 && !this.state.isRejecting;
-    const approveButtonTitle: string = canApprove
-      ? 'Save the signed PDF and approve the current document'
-      : 'Place the signature on the PDF before approving';
+    const approveButtonTitle: string = !isActiveDocumentPending
+      ? 'Available only for Pending items'
+      : canApprove
+        ? 'Save the signed PDF and approve the current document'
+        : 'Place the signature on the PDF before approving';
     const signatureHeight: number = getSignatureHeight(signatureWidth, signatureAspectRatio);
 
     return (
@@ -223,13 +226,13 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                     onEnd={this._captureSignature}
                   />
                   <div className={styles.buttonRow}>
-                    <PrimaryButton text="Use Signature" onClick={this._captureSignature} />
+                    <PrimaryButton text="Use Signature" onClick={this._captureSignature} disabled={!isActiveDocumentPending} />
                     <PrimaryButton
                       text={this.state.isSavingSignature ? 'Saving signature...' : 'Save Signature'}
                       onClick={this._saveSignatureToSharePoint}
-                      disabled={!canSaveSignature}
+                      disabled={!canSaveSignature || !isActiveDocumentPending}
                     />
-                    <DefaultButton text="Clear" onClick={this._clearSignature} />
+                    <DefaultButton text="Clear" onClick={this._clearSignature} disabled={!isActiveDocumentPending} />
                   </div>
                 </div>
 
@@ -302,7 +305,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
           </div>
           <DialogFooter>
             <PrimaryButton text={this.state.isApproving ? 'Approving...' : 'Approve'} onClick={this._approveDocument} disabled={!canApprove} title={approveButtonTitle} />
-            <DefaultButton text={this.state.isRejecting ? 'Rejecting...' : 'Reject'} onClick={this._openRejectDialog} disabled={!canReject} />
+            <DefaultButton text={this.state.isRejecting ? 'Rejecting...' : 'Reject'} onClick={this._openRejectDialog} disabled={!canReject} title={isActiveDocumentPending ? undefined : 'Available only for Pending items'} />
           </DialogFooter>
         </Dialog>
 
@@ -933,12 +936,11 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
     const listInfo = getListApiPath(listName);
     const currentUserEmail = this.props.userEmail?.trim() || '';
-    const signatoryFilter = currentUserEmail
-      ? `&$filter=L1Signatory eq '${currentUserEmail.replace(/'/g, "''")}'`
-      : '';
+    const lastDateToFetchFrom = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    const signatoryFilter = currentUserEmail ? ` and L1Signatory eq '${currentUserEmail.replace(/'/g, "''")}'` : '';
 
     try {
-      const requestUrl = `${apiBaseUrl}/_api/${listInfo.apiPath}/items?$select=Id,Title,DocumentID,DocumentName,DocumentNumber,Trader,AccountCode,ApprovalStatus,Comments,IsTaskActive,Created,Modified,L1Signatory,AttachmentFiles&$expand=AttachmentFiles&$top=500${signatoryFilter}`;
+      const requestUrl = `${apiBaseUrl}/_api/${listInfo.apiPath}/items?$select=Id,Title,DocumentID,DocumentName,DocumentNumber,Trader,AccountCode,ApprovalStatus,Comments,IsTaskActive,Created,Modified,L1Signatory,AttachmentFiles&$expand=AttachmentFiles&$top=500&$filter=Created ge datetime'${lastDateToFetchFrom}'${signatoryFilter}`;
       const itemsResponse = await spHttpClient.get(
         requestUrl,
         SPHttpClient.configurations.v1,
@@ -2093,7 +2095,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     const historyItems = (json && (json.value as Array<ISharePointDocumentItem>)) || [];
     const approvalHistory: IApprovalHistoryItem[] = historyItems.map((item: ISharePointDocumentItem): IApprovalHistoryItem => {
       const approvalStatus = item.ApprovalStatus || '';
-      const actionTakenBy = approvalStatus === 'L1 Signed' || approvalStatus === 'L2 Signed'
+      const actionTakenBy = approvalStatus === 'L1 Rejected' || approvalStatus === 'L2 Rejected' ||
+        approvalStatus === 'L1 Signed' || approvalStatus === 'L2 Signed'
         ? item.L1Signatory
         : '';
 

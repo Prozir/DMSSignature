@@ -189,6 +189,11 @@
   min-width: 760px;
   width: 100%;
 
+  th:first-child,
+  td:first-child {
+    width: 150px;
+  }
+
   th,
   td {
     border-bottom: 1px solid #e2e8f0;

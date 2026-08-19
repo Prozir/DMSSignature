@@ -5,6 +5,12 @@ import styles from './SignatureWebPart.module.scss';
 import type { DocumentDisplayMode } from './ISignatureWebPartProps';
 
 type StatusFilter = 'Pending' | 'Signed' | 'Rejected' | 'Total';
+/*
+<div className={styles.documentCardField}>
+                  <span className={styles.documentCardLabel}>Task ID</span>
+                  <span className={styles.documentCardValue}>{item.id}</span>
+                </div>
+*/
 
 const statusFilterOptions: IDropdownOption[] = [
   { key: 'Pending', text: 'Pending' },
@@ -40,27 +46,17 @@ export interface IDocumentsListProps {
 
 const getDateTimeValue = (value?: string): string => value ? new Date(value).toLocaleString() : '';
 
-const isPending = (item: IDocumentListItem): boolean =>
-  (item.approvalStatus || '').toLowerCase().indexOf('pending') !== -1;
-
 const renderActionIcon = (item: IDocumentListItem, onOpenItem: (item: IDocumentListItem) => void, className?: string): React.ReactElement => {
-  const isPendingItem: boolean = isPending(item);
-
   return (
     <Icon
       iconName="InsertSignatureLine"
       className={className}
-      title={isPendingItem ? `Open ${item.documentName || item.title || 'document'}` : 'Available only for Pending items'}
-      aria-label={isPendingItem ? `Open ${item.documentName || item.title || 'document'}` : 'Action disabled for non-pending status'}
-      aria-disabled={!isPendingItem}
-      role={isPendingItem ? 'button' : undefined}
-      tabIndex={isPendingItem ? 0 : -1}
-      onClick={isPendingItem ? (() => onOpenItem(item)) : undefined}
+      title={`Open ${item.documentName || item.title || 'document'}`}
+      aria-label={`Open ${item.documentName || item.title || 'document'}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenItem(item)}
       onKeyDown={(e) => {
-        if (!isPendingItem) {
-          return;
-        }
-
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onOpenItem(item);
@@ -68,11 +64,11 @@ const renderActionIcon = (item: IDocumentListItem, onOpenItem: (item: IDocumentL
       }}
       styles={{
         root: {
-          cursor: isPendingItem ? 'pointer' : 'not-allowed',
+          cursor: 'pointer',
           fontSize: 16,
-          color: isPendingItem ? 'var(--themePrimary)' : '#94a3b8',
+          color: 'var(--themePrimary)',
           selectors: {
-            ':hover': { color: isPendingItem ? 'var(--themeDarkAlt)' : '#94a3b8' },
+            ':hover': { color: 'var(--themeDarkAlt)' },
           },
         },
       }}
@@ -224,7 +220,7 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
           {filteredItems.map((item: IDocumentListItem) => (
             <div key={item.id} className={styles.documentCard}>
               <div className={styles.documentCardHeader}>
-                <span className={styles.documentCardTitle}>{item.documentName || item.title || 'Untitled document'}</span>
+                <span className={styles.documentCardTitle}>Document No. : {item.documentNumber || item.title || 'Untitled document'}</span>
                 <div className={styles.documentCardAction}>
                   <div className={styles.documentListActions}>
                     {renderActionIcon(item, props.onOpenItem, styles.documentActionIcon)}
@@ -233,13 +229,10 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
               </div>
 
               <div className={styles.documentCardBody}>
+                
                 <div className={styles.documentCardField}>
-                  <span className={styles.documentCardLabel}>Task ID</span>
-                  <span className={styles.documentCardValue}>{item.id}</span>
-                </div>
-                <div className={styles.documentCardField}>
-                  <span className={styles.documentCardLabel}>Document Number</span>
-                  <span className={styles.documentCardValue}>{item.documentNumber || '-'}</span>
+                  <span className={styles.documentCardLabel}>Document Name</span>
+                  <span className={styles.documentCardValue}>{item.documentName || '-'}</span>
                 </div>
                 <div className={styles.documentCardField}>
                   <span className={styles.documentCardLabel}>Trader</span>
