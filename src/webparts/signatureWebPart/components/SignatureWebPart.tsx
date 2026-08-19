@@ -7,8 +7,9 @@ import { SPHttpClient } from '@microsoft/sp-http';
 import { Dialog, DialogFooter, DefaultButton, PrimaryButton } from '@fluentui/react';
 import styles from './SignatureWebPart.module.scss';
 import DocumentsList, { IDocumentListItem } from './DocumentsList';
+import ApprovalHistory from './ApprovalHistory';
 import type { ISignatureWebPartProps } from './ISignatureWebPartProps';
-import type { ISignaturePlacement, ISignatureWebPartState } from './SignatureWebPartInterfaces';
+import type { IApprovalHistoryItem, ISignaturePlacement, ISignatureWebPartState } from './SignatureWebPartInterfaces';
 import {
   getApprovalUpdate,
   getFileNameFromServerRelativeUrl,
@@ -37,6 +38,7 @@ interface ISharePointDocumentItem {
   IsTaskActive?: boolean;
   Created?: string;
   Modified?: string;
+  ActionTakenOn?: string;
   AttachmentFiles?: Array<{ FileName: string; ServerRelativeUrl: string }>;
 }
 
@@ -50,6 +52,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
   private _resizeTimer: number | undefined;
   private _hasHandledTaskIdDeepLink: boolean = false;
   private _isHandlingTaskIdDeepLink: boolean = false;
+  private _approvalHistoryRequestId: number = 0;
 
   // Set default values used by the component when it first loads.
   public constructor(props: ISignatureWebPartProps) {
@@ -67,6 +70,10 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       statusMessage: 'Loading documents...',
       documents: [],
       isDocumentsLoading: false,
+      isApprovalHistoryOpen: false,
+      isApprovalHistoryLoading: false,
+      approvalHistoryError: '',
+      approvalHistory: [],
       isDialogOpen: false,
       isRejectDialogOpen: false,
       isApprovalSuccessDialogOpen: false,
@@ -167,8 +174,18 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
             isLoading={this.state.isDocumentsLoading}
             displayMode={this.props.displayMode}
             onOpenItem={this._openDocument}
+            onShowHistory={this._showApprovalHistory}
           />
         </div>
+
+        <ApprovalHistory
+          isOpen={this.state.isApprovalHistoryOpen}
+          isLoading={this.state.isApprovalHistoryLoading}
+          errorMessage={this.state.approvalHistoryError}
+          document={this.state.approvalHistoryDocument}
+          items={this.state.approvalHistory}
+          onDismiss={this._closeApprovalHistory}
+        />
 
         <Dialog
           hidden={!this.state.isDialogOpen}
@@ -571,6 +588,55 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         });
       }
     }
+  };
+
+  // Open the approval history for a selected document.
+  private readonly _showApprovalHistory = async (item: IDocumentListItem): Promise<void> => {
+    const requestId: number = ++this._approvalHistoryRequestId;
+
+    this.setState({
+      approvalHistoryDocument: item,
+      approvalHistory: [],
+      approvalHistoryError: '',
+      isApprovalHistoryLoading: true,
+      isApprovalHistoryOpen: true
+    });
+
+    try {
+      const items = await this._getApprovalHistoryItems(item);
+
+      if (requestId !== this._approvalHistoryRequestId) {
+        return;
+      }
+
+      this.setState({
+        approvalHistory: items,
+        isApprovalHistoryLoading: false
+      });
+    } catch (error) {
+      if (requestId !== this._approvalHistoryRequestId) {
+        return;
+      }
+
+      this.setState({
+        approvalHistory: [],
+        isApprovalHistoryLoading: false,
+        approvalHistoryError: `The approval history could not be loaded. ${this._getErrorMessage(error)}`.trim()
+      });
+    }
+  };
+
+  private readonly _closeApprovalHistory = (): void => {
+    this._blurActiveElement();
+    this._approvalHistoryRequestId++;
+
+    this.setState({
+      isApprovalHistoryOpen: false,
+      isApprovalHistoryLoading: false,
+      approvalHistoryError: '',
+      approvalHistory: [],
+      approvalHistoryDocument: undefined
+    });
   };
 
   // Close the main dialog and clear active document state.
@@ -1989,6 +2055,68 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     this.setState({
       rejectionComments: event.target.value
     });
+  };
+
+  private readonly _getApprovalHistoryItems = async (document: IDocumentListItem): Promise<IApprovalHistoryItem[]> => {
+    const { siteUrl, taskListName, spHttpClient, webAbsoluteUrl } = this.props;
+    const trimmedSiteUrl: string = siteUrl ? siteUrl.trim() : webAbsoluteUrl;
+    const listName: string | undefined = taskListName ? taskListName.trim() : undefined;
+
+    if (!trimmedSiteUrl || !listName) {
+      throw new Error('The SharePoint site URL and task list name are required.');
+    }
+
+    if (!document.documentId || !document.documentNumber) {
+      throw new Error('Document ID and Document Number are required to find related approval history.');
+    }
+
+    const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
+    const listInfo = getListApiPath(listName);
+    const safeDocumentId = document.documentId.replace(/'/g, "''");
+    const safeDocumentNumber = document.documentNumber.replace(/'/g, "''");
+    const requestUrl = `${apiBaseUrl}/_api/${listInfo.apiPath}/items?$select=Id,DocumentID,DocumentNumber,L1Signatory,ApprovalStatus,Comments,ActionTakenOn,Created&$filter=DocumentID eq '${safeDocumentId}' and DocumentNumber eq '${safeDocumentNumber}'&$top=500`;
+    const response = await spHttpClient.get(
+      requestUrl,
+      SPHttpClient.configurations.v1,
+      {
+        headers: {
+          Accept: 'application/json;odata=nometadata'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Unable to query approval history. Status ${response.status}`);
+    }
+
+    const json = await response.json();
+    const historyItems = (json && (json.value as Array<ISharePointDocumentItem>)) || [];
+    const approvalHistory: IApprovalHistoryItem[] = historyItems.map((item: ISharePointDocumentItem): IApprovalHistoryItem => {
+      const approvalStatus = item.ApprovalStatus || '';
+      const actionTakenBy = approvalStatus === 'L1 Signed' || approvalStatus === 'L2 Signed'
+        ? item.L1Signatory
+        : '';
+
+      return {
+        id: item.Id,
+        documentId: item.DocumentID,
+        documentNumber: item.DocumentNumber,
+        approvalRecipient: item.L1Signatory,
+        actionTakenBy,
+        approvalStatus: item.ApprovalStatus,
+        comments: item.Comments,
+        actionTakenOn: item.ActionTakenOn,
+        created: item.Created
+      };
+    });
+
+    approvalHistory.sort((first: IApprovalHistoryItem, second: IApprovalHistoryItem) => {
+      const firstTime = first.created ? new Date(first.created).getTime() : 0;
+      const secondTime = second.created ? new Date(second.created).getTime() : 0;
+      return secondTime - firstTime || second.id - first.id;
+    });
+
+    return approvalHistory;
   };
 
   // Find other items that share the same document IDs.

@@ -35,6 +35,7 @@ export interface IDocumentsListProps {
   isLoading: boolean;
   displayMode: DocumentDisplayMode;
   onOpenItem: (item: IDocumentListItem) => void;
+  onShowHistory: (item: IDocumentListItem) => void;
 }
 
 const getDateTimeValue = (value?: string): string => value ? new Date(value).toLocaleString() : '';
@@ -79,7 +80,35 @@ const renderActionIcon = (item: IDocumentListItem, onOpenItem: (item: IDocumentL
   );
 };
 
-const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] => [
+const renderHistoryIcon = (item: IDocumentListItem, onShowHistory: (item: IDocumentListItem) => void, className?: string): React.ReactElement => (
+  <Icon
+    iconName="History"
+    className={className}
+    title={`View approval history for ${item.documentName || item.title || 'document'}`}
+    aria-label={`View approval history for ${item.documentName || item.title || 'document'}`}
+    role="button"
+    tabIndex={0}
+    onClick={() => onShowHistory(item)}
+    onKeyDown={(event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        onShowHistory(item);
+      }
+    }}
+    styles={{
+      root: {
+        cursor: 'pointer',
+        fontSize: 16,
+        color: 'var(--themePrimary)',
+        selectors: {
+          ':hover': { color: 'var(--themeDarkAlt)' }
+        }
+      }
+    }}
+  />
+);
+
+const getColumns = (onOpenItem: (item: IDocumentListItem) => void, onShowHistory: (item: IDocumentListItem) => void): IColumn[] => [
   {
     key: 'columnTaskId',
     name: 'Task ID',
@@ -150,7 +179,12 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void): IColumn[] =>
     fieldName: 'action',
     minWidth: 80,
     isResizable: false,
-    onRender: (item: IDocumentListItem) => renderActionIcon(item, onOpenItem)
+    onRender: (item: IDocumentListItem) => (
+      <div className={styles.documentListActions}>
+        {renderActionIcon(item, onOpenItem)}
+        {renderHistoryIcon(item, onShowHistory)}
+      </div>
+    )
   }
 ];
 
@@ -192,7 +226,9 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
               <div className={styles.documentCardHeader}>
                 <span className={styles.documentCardTitle}>{item.documentName || item.title || 'Untitled document'}</span>
                 <div className={styles.documentCardAction}>
-                  {renderActionIcon(item, props.onOpenItem, styles.documentActionIcon)}
+                  <div className={styles.documentListActions}>
+                    {renderActionIcon(item, props.onOpenItem, styles.documentActionIcon)}
+                  </div>
                 </div>
               </div>
 
@@ -215,7 +251,10 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
                 </div>
                 <div className={styles.documentCardField}>
                   <span className={styles.documentCardLabel}>Approval Status</span>
-                  <span className={styles.documentCardValue}>{item.approvalStatus || '-'}</span>
+                  <span className={`${styles.documentCardValue} ${styles.documentCardStatusValue}`}>
+                    <span>{item.approvalStatus || '-'}</span>
+                    {renderHistoryIcon(item, props.onShowHistory, styles.documentActionIcon)}
+                  </span>
                 </div>
                 <div className={styles.documentCardField}>
                   <span className={styles.documentCardLabel}>Created</span>
@@ -226,13 +265,14 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
                   <span className={styles.documentCardValue}>{getDateTimeValue(item.modified) || '-'}</span>
                 </div>
               </div>
+
             </div>
           ))}
         </div>
       ) : (
         <DetailsList
           items={filteredItems}
-          columns={getColumns(props.onOpenItem)}
+          columns={getColumns(props.onOpenItem, props.onShowHistory)}
           setKey="documentsList"
           selectionMode={SelectionMode.none}
           layoutMode={DetailsListLayoutMode.justified}

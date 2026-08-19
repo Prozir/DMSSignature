@@ -157,6 +157,58 @@
   line-height: 1;
 }
 
+.documentListActions {
+  align-items: center;
+  display: inline-flex;
+  gap: 10px;
+}
+
+.approvalHistoryContent {
+  min-width: 0;
+}
+
+.approvalHistoryIdentity {
+  color: #475569;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.approvalHistoryMessage {
+  color: #475569;
+  padding: 16px 0;
+}
+
+.approvalHistoryTableWrap {
+  overflow-x: auto;
+}
+
+.approvalHistoryTable {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+
+  th,
+  td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 10px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: #f8fafc;
+    color: #334155;
+    font-weight: 600;
+  }
+
+  td {
+    color: #0f172a;
+    line-height: 1.4;
+  }
+}
+
 .documentActionIcon {
   display: inline-flex;
 }
@@ -184,6 +236,12 @@
   font-size: 12px;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.documentCardStatusValue {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
 }
 
 .signatureCanvas {

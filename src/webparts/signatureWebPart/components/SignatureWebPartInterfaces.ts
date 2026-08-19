@@ -1,5 +1,17 @@
 import type { IDocumentListItem } from './DocumentsList';
 
+export interface IApprovalHistoryItem {
+  id: number;
+  documentId?: string;
+  documentNumber?: string;
+  approvalRecipient?: string;
+  actionTakenBy?: string;
+  approvalStatus?: string;
+  comments?: string;
+  actionTakenOn?: string;
+  created?: string;
+}
+
 export interface ISignaturePlacement {
   pageIndex: number;
   x: number;
@@ -30,6 +42,11 @@ export interface ISignatureWebPartState {
   statusMessage: string;
   documents: IDocumentListItem[];
   isDocumentsLoading: boolean;
+  isApprovalHistoryOpen: boolean;
+  isApprovalHistoryLoading: boolean;
+  approvalHistoryError: string;
+  approvalHistory: IApprovalHistoryItem[];
+  approvalHistoryDocument?: IDocumentListItem;
   isDialogOpen: boolean;
   isRejectDialogOpen: boolean;
   isApprovalSuccessDialogOpen: boolean;
