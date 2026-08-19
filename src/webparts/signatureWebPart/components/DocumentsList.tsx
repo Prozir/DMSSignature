@@ -220,7 +220,7 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
           {filteredItems.map((item: IDocumentListItem) => (
             <div key={item.id} className={styles.documentCard}>
               <div className={styles.documentCardHeader}>
-                <span className={styles.documentCardTitle}>Document No. : {item.documentNumber || item.title || 'Untitled document'}</span>
+                <span className={styles.documentCardTitle}>Document Number : {item.documentNumber || item.title || 'Untitled document'}</span>
                 <div className={styles.documentCardAction}>
                   <div className={styles.documentListActions}>
                     {renderActionIcon(item, props.onOpenItem, styles.documentActionIcon)}
