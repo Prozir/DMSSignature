@@ -4,7 +4,7 @@ import * as pdfJsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 import { PDFDocument } from 'pdf-lib';
 import { SPHttpClient } from '@microsoft/sp-http';
-import { Dialog, DialogFooter, DefaultButton, PrimaryButton } from '@fluentui/react';
+import { Dialog, DialogFooter, DefaultButton, PrimaryButton, Slider } from '@fluentui/react';
 import styles from './SignatureWebPart.module.scss';
 import DocumentsList, { IDocumentListItem } from './DocumentsList';
 import ApprovalHistory from './ApprovalHistory';
@@ -84,6 +84,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       isRejecting: false,
       isSavingSignature: false,
       isLoadingSavedSignature: false,
+      isSignatureCanvasEmpty: true,
+      isSaveSignatureConfirmOpen: false,
       rejectionComments: '',
       savedSignatureDataUrl: '',
       savedSignatureAspectRatio: 2.8
@@ -149,19 +151,21 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       isLoading,
       isRendering,
       pageCount,
-      pageSize,
       placement,
       signatureAspectRatio,
       signatureDataUrl,
       signatureWidth,
     } = this.state;
 
-    const canPlaceSignature: boolean = !!pageSize && signatureDataUrl.length > 0 && !isRendering;
     const isActiveDocumentPending: boolean = (this.state.activeDocument?.approvalStatus || '').toLowerCase().indexOf('pending') !== -1;
     const canApprove: boolean = !!this.state.activeDocument && isActiveDocumentPending && !!placement && signatureDataUrl.length > 0 && !isLoading && !isRendering && !this.state.isApproving;
     const canReject: boolean = !!this.state.activeDocument && isActiveDocumentPending && !this.state.isRejecting && !this.state.isApproving;
     const canSaveSignature: boolean = !this.state.isSavingSignature && !this.state.isLoadingSavedSignature;
     const canSubmitReject: boolean = this.state.rejectionComments.trim().length > 0 && !this.state.isRejecting;
+    const hasSavedSignature: boolean = !this.state.isLoadingSavedSignature && this.state.savedSignatureDataUrl.length > 0;
+    const canNavigatePages: boolean = pageCount > 1;
+    const canGoToPreviousPage: boolean = canNavigatePages && currentPageIndex > 0;
+    const canGoToNextPage: boolean = canNavigatePages && currentPageIndex < pageCount - 1;
     const approveButtonTitle: string = !isActiveDocumentPending
       ? 'Available only for Pending items'
       : canApprove
@@ -225,15 +229,21 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                     }}
                     onEnd={this._captureSignature}
                   />
-                  <div className={styles.buttonRow}>
-                    <PrimaryButton text="Use Signature" onClick={this._captureSignature} disabled={!isActiveDocumentPending} />
-                    <PrimaryButton
-                      text={this.state.isSavingSignature ? 'Saving signature...' : 'Save Signature'}
-                      onClick={this._saveSignatureToSharePoint}
-                      disabled={!canSaveSignature || !isActiveDocumentPending}
-                    />
-                    <DefaultButton text="Clear" onClick={this._clearSignature} disabled={!isActiveDocumentPending} />
-                  </div>
+                  {hasSavedSignature ? (
+                    <p className={`${styles.helpText} ${styles.signatureExistsMessage}`}>
+                      Please click the contract signature placeholder to insert your signature. Once inserted, you can adjust the signature width as needed.
+                    </p>
+                  ) : (
+                    <div className={styles.buttonRow}>
+                      <PrimaryButton text="Use Signature" onClick={this._captureSignature} disabled={!isActiveDocumentPending || this.state.isSignatureCanvasEmpty} />
+                      <PrimaryButton
+                        text={this.state.isSavingSignature ? 'Saving signature...' : 'Save Signature'}
+                        onClick={this._openSaveSignatureConfirm}
+                        disabled={!canSaveSignature || !isActiveDocumentPending || this.state.isSignatureCanvasEmpty}
+                      />
+                      <DefaultButton text="Clear" onClick={this._clearSignature} disabled={!isActiveDocumentPending} />
+                    </div>
+                  )}
                 </div>
 
                 <div className={styles.panel}>
@@ -241,18 +251,15 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                   <label className={styles.rangeLabel} htmlFor="signatureWidth">
                     Width: {signatureWidth}px
                   </label>
-                  <input
+                  <Slider
                     id="signatureWidth"
-                    type="range"
-                    min="20"
-                    max="220"
-                    step="10"
+                    min={20}
+                    max={220}
+                    step={10}
                     value={signatureWidth}
+                    showValue={false}
                     onChange={this._handleSignatureWidthChange}
                   />
-                  <p className={styles.helpText}>
-                    {canPlaceSignature ? 'Click the PDF preview where the top-left of the signature should appear.' : 'Draw a signature.'}
-                  </p>
                 </div>
 
               </aside>
@@ -261,13 +268,17 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                 <div className={styles.previewToolbar}>
                   <span>{fileName || 'No PDF selected'}</span>
                   <div className={styles.pageControls}>
-                    <button type="button" disabled={currentPageIndex === 0 || pageCount === 0} onClick={this._goToPreviousPage}>
-                      Previous
-                    </button>
+                    <PrimaryButton
+                      text="Previous"
+                      onClick={this._goToPreviousPage}
+                      disabled={!canGoToPreviousPage}
+                    />
                     <span>{pageCount > 0 ? `${currentPageIndex + 1} / ${pageCount}` : '0 / 0'}</span>
-                    <button type="button" disabled={currentPageIndex >= pageCount - 1 || pageCount === 0} onClick={this._goToNextPage}>
-                      Next
-                    </button>
+                    <PrimaryButton
+                      text="Next"
+                      onClick={this._goToNextPage}
+                      disabled={!canGoToNextPage}
+                    />
                   </div>
                 </div>
 
@@ -342,6 +353,23 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         </Dialog>
 
         <Dialog
+          hidden={!this.state.isSaveSignatureConfirmOpen}
+          onDismiss={this._closeSaveSignatureConfirm}
+          dialogContentProps={{
+            title: 'Save Signature',
+            subText: 'This signature will be used for all future approval requests once saved. Are you sure you want to continue?'
+          }}
+          modalProps={{
+            isBlocking: true
+          }}
+        >
+          <DialogFooter>
+            <PrimaryButton text="Yes" onClick={this._confirmSaveSignature} disabled={this.state.isSavingSignature} />
+            <DefaultButton text="Cancel" onClick={this._closeSaveSignatureConfirm} disabled={this.state.isSavingSignature} />
+          </DialogFooter>
+        </Dialog>
+
+        <Dialog
           hidden={!this.state.isApprovalSuccessDialogOpen}
           onDismiss={this._closeApprovalSuccessDialog}
           dialogContentProps={{
@@ -384,6 +412,9 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
   private readonly _handleSignaturePointerUp = (): void => {
     this._isSignaturePointerDown = false;
     this._resetSignaturePadInteraction();
+    this.setState({
+      isSignatureCanvasEmpty: !!this._signatureRef.current?.isEmpty()
+    });
   };
 
   // Reset hover state if the mouse moves without drawing pressed.
@@ -451,13 +482,14 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       signatureDataUrl: '',
       signatureAspectRatio: 2.8,
       placement: undefined,
-      statusMessage: 'Signature cleared.'
+      statusMessage: 'Signature cleared.',
+      isSignatureCanvasEmpty: true
     });
   };
 
   // Update signature width and keep placement width in sync.
-  private readonly _handleSignatureWidthChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
-    const width: number = Number(event.target.value);
+  private readonly _handleSignatureWidthChange = (value: number): void => {
+    const width: number = Number(value);
     const placement: ISignaturePlacement | undefined = this.state.placement
       ? {
         ...this.state.placement,
@@ -574,6 +606,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       rejectionComments: '',
       isLoadingSavedSignature: true,
       isLoading: true,
+      isSignatureCanvasEmpty: true,
       statusMessage: 'Loading PDF and saved signature...'
     });
 
@@ -1594,6 +1627,29 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     // Overwrite the existing attachment's bytes in place (single request) instead of delete+add,
     // which avoids bumping the list item version twice for one signing action.
     await this._updateAttachmentFileContent(apiBaseUrl, listTitle, activeDocument.id, encodedAttachmentName, signedPdfBytes);
+  };
+
+  // Open the confirmation dialog before saving the signature.
+  private readonly _openSaveSignatureConfirm = (): void => {
+    this.setState({
+      isSaveSignatureConfirmOpen: true
+    });
+  };
+
+  // Dismiss the save signature confirmation dialog without saving.
+  private readonly _closeSaveSignatureConfirm = (): void => {
+    this.setState({
+      isSaveSignatureConfirmOpen: false
+    });
+  };
+
+  // Confirm and proceed with saving the signature to SharePoint.
+  private readonly _confirmSaveSignature = async (): Promise<void> => {
+    this.setState({
+      isSaveSignatureConfirmOpen: false
+    });
+
+    await this._saveSignatureToSharePoint();
   };
 
   // Save current signature image to Signature Master list.

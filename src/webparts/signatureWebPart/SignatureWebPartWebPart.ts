@@ -8,6 +8,7 @@ import {
 } from '@microsoft/sp-property-pane';
 import { BaseClientSideWebPart } from '@microsoft/sp-webpart-base';
 import { IReadonlyTheme } from '@microsoft/sp-component-base';
+import { loadTheme } from '@fluentui/react';
 
 import * as strings from 'SignatureWebPartWebPartStrings';
 import SignatureWebPart from './components/SignatureWebPart';
@@ -88,7 +89,8 @@ export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISign
 
     this._isDarkTheme = !!currentTheme.isInverted;
     const {
-      semanticColors
+      semanticColors,
+      palette
     } = currentTheme;
 
     if (semanticColors) {
@@ -97,6 +99,17 @@ export default class SignatureWebPartWebPart extends BaseClientSideWebPart<ISign
       this.domElement.style.setProperty('--linkHovered', semanticColors.linkHovered || null);
     }
 
+    if (palette) {
+      this.domElement.style.setProperty('--themePrimary', palette.themePrimary || null);
+      this.domElement.style.setProperty('--themeDarkAlt', palette.themeDarkAlt || null);
+      this.domElement.style.setProperty('--neutralLight', palette.neutralLight || null);
+      this.domElement.style.setProperty('--neutralLighter', palette.neutralLighter || null);
+      this.domElement.style.setProperty('--neutralTertiary', palette.neutralTertiary || null);
+      this.domElement.style.setProperty('--white', palette.white || null);
+    }
+
+    // Sync the site theme into Fluent's global theme so components reading getTheme() (e.g. icon colors) match it.
+    loadTheme({ palette, semanticColors });
   }
 
   protected onDispose(): void {

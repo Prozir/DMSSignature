@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { DetailsList, DetailsListLayoutMode, ConstrainMode, IColumn, SelectionMode, Spinner, SpinnerSize, Dropdown, IDropdownOption } from '@fluentui/react';
+import { DetailsList, DetailsListLayoutMode, ConstrainMode, IColumn, SelectionMode, Spinner, SpinnerSize, Dropdown, IDropdownOption, getTheme } from '@fluentui/react';
 import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './SignatureWebPart.module.scss';
 import type { DocumentDisplayMode } from './ISignatureWebPartProps';
@@ -47,6 +47,8 @@ export interface IDocumentsListProps {
 const getDateTimeValue = (value?: string): string => value ? new Date(value).toLocaleString() : '';
 
 const renderActionIcon = (item: IDocumentListItem, onOpenItem: (item: IDocumentListItem) => void, className?: string): React.ReactElement => {
+  const themePalette = getTheme().palette;
+
   return (
     <Icon
       iconName="InsertSignatureLine"
@@ -66,9 +68,9 @@ const renderActionIcon = (item: IDocumentListItem, onOpenItem: (item: IDocumentL
         root: {
           cursor: 'pointer',
           fontSize: 16,
-          color: 'var(--themePrimary)',
+          color: themePalette.themePrimary,
           selectors: {
-            ':hover': { color: 'var(--themeDarkAlt)' },
+            ':hover': { color: themePalette.themeDarkAlt },
           },
         },
       }}
@@ -76,33 +78,37 @@ const renderActionIcon = (item: IDocumentListItem, onOpenItem: (item: IDocumentL
   );
 };
 
-const renderHistoryIcon = (item: IDocumentListItem, onShowHistory: (item: IDocumentListItem) => void, className?: string): React.ReactElement => (
-  <Icon
-    iconName="History"
-    className={className}
-    title={`View approval history for ${item.documentName || item.title || 'document'}`}
-    aria-label={`View approval history for ${item.documentName || item.title || 'document'}`}
-    role="button"
-    tabIndex={0}
-    onClick={() => onShowHistory(item)}
-    onKeyDown={(event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        onShowHistory(item);
-      }
-    }}
-    styles={{
-      root: {
-        cursor: 'pointer',
-        fontSize: 16,
-        color: 'var(--themePrimary)',
-        selectors: {
-          ':hover': { color: 'var(--themeDarkAlt)' }
+const renderHistoryIcon = (item: IDocumentListItem, onShowHistory: (item: IDocumentListItem) => void, className?: string): React.ReactElement => {
+  const themePalette = getTheme().palette;
+
+  return (
+    <Icon
+      iconName="History"
+      className={className}
+      title={`View approval history for ${item.documentName || item.title || 'document'}`}
+      aria-label={`View approval history for ${item.documentName || item.title || 'document'}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onShowHistory(item)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onShowHistory(item);
         }
-      }
-    }}
-  />
-);
+      }}
+      styles={{
+        root: {
+          cursor: 'pointer',
+          fontSize: 16,
+          color: themePalette.themePrimary,
+          selectors: {
+            ':hover': { color: themePalette.themeDarkAlt }
+          }
+        }
+      }}
+    />
+  );
+};
 
 const getColumns = (onOpenItem: (item: IDocumentListItem) => void, onShowHistory: (item: IDocumentListItem) => void): IColumn[] => [
   {
@@ -186,6 +192,7 @@ const getColumns = (onOpenItem: (item: IDocumentListItem) => void, onShowHistory
 
 export default function DocumentsList(props: IDocumentsListProps): React.ReactElement {
   const [selectedStatus, setSelectedStatus] = React.useState<StatusFilter>('Pending');
+  const themePrimary: string = getTheme().palette.themePrimary;
 
   const filteredItems: IDocumentListItem[] = React.useMemo(() => {
     const normalizedStatus: string = selectedStatus.toLowerCase();
@@ -218,7 +225,11 @@ export default function DocumentsList(props: IDocumentsListProps): React.ReactEl
       ) : props.displayMode === 'cards' ? (
         <div className={styles.documentsCards}>
           {filteredItems.map((item: IDocumentListItem) => (
-            <div key={item.id} className={styles.documentCard}>
+            <div
+              key={item.id}
+              className={styles.documentCard}
+              style={{ '--document-card-border-color': themePrimary } as React.CSSProperties}
+            >
               <div className={styles.documentCardHeader}>
                 <span className={styles.documentCardTitle}>Document Number : {item.documentNumber || item.title || 'Untitled document'}</span>
                 <div className={styles.documentCardAction}>

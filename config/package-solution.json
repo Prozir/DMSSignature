@@ -3,7 +3,7 @@
   "solution": {
     "name": "signature-web-part-client-side-solution",
     "id": "ff27e071-e58f-4e5b-89e0-298b70bf6de8",
-    "version": "3.1.0.0",
+    "version": "3.2.0.0",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": true,
     "isDomainIsolated": false,

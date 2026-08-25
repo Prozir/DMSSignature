@@ -57,6 +57,8 @@ export interface ISignatureWebPartState {
   isRejecting: boolean;
   isSavingSignature: boolean;
   isLoadingSavedSignature: boolean;
+  isSignatureCanvasEmpty: boolean;
+  isSaveSignatureConfirmOpen: boolean;
   activeDocument?: IDocumentListItem;
   rejectionComments: string;
   savedSignatureDataUrl: string;
