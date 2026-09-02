@@ -9,8 +9,7 @@ import styles from './SignatureWebPart.module.scss';
 import DocumentsList, { IDocumentListItem } from './DocumentsList';
 import ApprovalHistory from './ApprovalHistory';
 import type { ISignatureWebPartProps } from './ISignatureWebPartProps';
-import type { IApprovalHistoryItem, ISignaturePlacement, ISignatureWebPartState } from './SignatureWebPartInterfaces';
-import {
+import type { IApprovalHistoryItem, IPdfPage, ISignaturePlacement, ISignatureWebPartState } from './SignatureWebPartInterfaces';import {
   getApprovalUpdate,
   getFileNameFromServerRelativeUrl,
   getListApiPath,
@@ -19,10 +18,14 @@ import {
 } from './SignatureWebPartSharePointHelper';
 import {
   dataUrlToUint8Array,
+  findSignatureAnchorRect,
+  getAnchorPatternForApprovalStatus,
+  getFittedPlacement,
   getSignatureHeight,
   getTrimmedSignatureCanvas,
   uint8ArrayToDataUrl
 } from './SignatureWebPartSignatureHelper';
+import type { IAnchorPatternConfig } from './SignatureWebPartSignatureHelper';
 
 interface ISharePointDocumentItem {
   Id: number;
@@ -113,7 +116,9 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       previousState.pdfDocument !== this.state.pdfDocument ||
       previousState.currentPageIndex !== this.state.currentPageIndex
     ) {
-      this._renderCurrentPage().catch(() => {
+      this._renderCurrentPage().catch(error => {
+        // eslint-disable-next-line no-console
+        console.error('The selected PDF page could not be rendered.', error);
         this.setState({
           isRendering: false,
           statusMessage: 'The selected PDF page could not be rendered.'
@@ -231,7 +236,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
                   />
                   {hasSavedSignature ? (
                     <p className={`${styles.helpText} ${styles.signatureExistsMessage}`}>
-                      Please click the contract signature placeholder to insert your signature. Once inserted, you can adjust the signature width as needed.
+                      Your saved signature has been placed automatically. You can adjust the signature width as needed, or click the PDF to reposition it.
                     </p>
                   ) : (
                     <div className={styles.buttonRow}>
@@ -445,6 +450,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         signatureDataUrl: '',
         signatureAspectRatio: 2.8,
         placement: undefined,
+        isPlacementAutoDetected: undefined,
         statusMessage: 'Draw a signature before placing it on the PDF.'
       });
       return;
@@ -457,16 +463,29 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         signatureDataUrl: '',
         signatureAspectRatio: 2.8,
         placement: undefined,
+        isPlacementAutoDetected: undefined,
         statusMessage: 'The signature could not be captured. Please draw it again.'
       });
       return;
     }
 
+    const aspectRatio: number = signatureCanvas.width / signatureCanvas.height;
+    const { signatureAnchorRect, isPlacementAutoDetected, pageSize } = this.state;
+    const shouldRefitToAnchor: boolean = !!signatureAnchorRect && isPlacementAutoDetected !== false;
+
+    // eslint-disable-next-line no-console
+    console.info('[SignatureAnchor] Capture signature. shouldRefitToAnchor:', shouldRefitToAnchor, 'signatureAnchorRect:', signatureAnchorRect);
+
     this.setState({
       signatureDataUrl: signatureCanvas.toDataURL('image/png'),
-      signatureAspectRatio: signatureCanvas.width / signatureCanvas.height,
-      placement: undefined,
-      statusMessage: 'Signature captured. Click the PDF page to place it.'
+      signatureAspectRatio: aspectRatio,
+      placement: shouldRefitToAnchor && signatureAnchorRect
+        ? getFittedPlacement(signatureAnchorRect, aspectRatio, pageSize?.width || 0, pageSize?.height || 0)
+        : undefined,
+      isPlacementAutoDetected: shouldRefitToAnchor,
+      statusMessage: shouldRefitToAnchor
+        ? 'Signature captured and placed automatically.'
+        : 'Signature captured. Click the PDF page to place it.'
     });
   };
 
@@ -482,6 +501,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       signatureDataUrl: '',
       signatureAspectRatio: 2.8,
       placement: undefined,
+      isPlacementAutoDetected: undefined,
       statusMessage: 'Signature cleared.',
       isSignatureCanvasEmpty: true
     });
@@ -527,6 +547,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         renderedWidth: canvas.width,
         renderedHeight: canvas.height
       },
+      isPlacementAutoDetected: false,
       statusMessage: 'Signature placed successfully.'
     });
   };
@@ -601,6 +622,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       currentPageIndex: 0,
       pageSize: undefined,
       placement: undefined,
+      signatureAnchorRect: undefined,
+      isPlacementAutoDetected: undefined,
       signatureDataUrl: '',
       signatureAspectRatio: 2.8,
       rejectionComments: '',
@@ -1304,7 +1327,9 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     this.setState({
       isLoading: true,
       statusMessage: 'Loading document... ',
-      placement: undefined
+      placement: undefined,
+      signatureAnchorRect: undefined,
+      isPlacementAutoDetected: undefined
     });
 
     const apiBaseUrl: string = trimmedSiteUrl.replace(/\/$/, '');
@@ -1339,6 +1364,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
             pageCount: 0,
             pageSize: undefined,
             placement: undefined,
+            signatureAnchorRect: undefined,
+            isPlacementAutoDetected: undefined,
             isLoading: false,
             statusMessage: `No items with attachments were found in the list '${listName}'.`
           });
@@ -1397,6 +1424,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
           pageCount: 0,
           pageSize: undefined,
           placement: undefined,
+          signatureAnchorRect: undefined,
+          isPlacementAutoDetected: undefined,
           isLoading: false,
           statusMessage: `No PDF attachment was found for item ${itemIdToUse}.`
         });
@@ -1428,7 +1457,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         pdfBytes: bytes,
         pdfDocument,
         pageCount,
-        currentPageIndex: 0,
+        currentPageIndex: Math.max(0, pageCount - 1),
         isLoading: false,
         statusMessage: ""//`Loaded ${pageCount} page${pageCount === 1 ? '' : 's'} from SharePoint.`
       });
@@ -1440,6 +1469,8 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
         pageCount: 0,
         pageSize: undefined,
         placement: undefined,
+        signatureAnchorRect: undefined,
+        isPlacementAutoDetected: undefined,
         isLoading: false,
         statusMessage: `The SharePoint document could not be loaded. ${this._getErrorMessage(error)}`
       });
@@ -1459,10 +1490,7 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
     this.setState({ isRendering: true });
 
     const page = await (pdfDocument as { getPage: (pageNumber: number) => Promise<unknown> }).getPage(currentPageIndex + 1);
-    const pdfPage = page as {
-      getViewport: (options: { scale: number }) => { width: number; height: number };
-      render: (options: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => { promise: Promise<void> };
-    };
+    const pdfPage = page as unknown as IPdfPage;
     const unscaledViewport = pdfPage.getViewport({ scale: 1 });
     const wrapStyle: CSSStyleDeclaration = window.getComputedStyle(canvasWrap);
     const horizontalPadding: number = parseFloat(wrapStyle.paddingLeft) + parseFloat(wrapStyle.paddingRight);
@@ -1490,7 +1518,60 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       },
       isRendering: false
     });
+
+    try {
+      await this._autoDetectAndPlaceSignature(pdfPage, viewport, canvas.width, canvas.height);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Signature anchor detection failed.', error);
+    }
   }
+
+  // Locate the hidden signer anchor text and, unless the user manually placed the signature, position it there.
+  private readonly _autoDetectAndPlaceSignature = async (
+    pdfPage: IPdfPage,
+    viewport: { width: number; height: number; convertToViewportPoint(x: number, y: number): number[] },
+    renderedWidth: number,
+    renderedHeight: number
+  ): Promise<void> => {
+    const approvalStatus: string | undefined = this.state.activeDocument?.approvalStatus;
+    const pattern: IAnchorPatternConfig | undefined = getAnchorPatternForApprovalStatus(approvalStatus);
+
+    if (!pattern) {
+      // eslint-disable-next-line no-console
+      console.info('[SignatureAnchor] No anchor pattern for approval status:', approvalStatus);
+      this.setState({ signatureAnchorRect: undefined });
+      return;
+    }
+
+    const anchorRect = await findSignatureAnchorRect(pdfPage, viewport, pattern, this.state.currentPageIndex);
+
+    if (!anchorRect) {
+      this.setState(previousState => ({
+        signatureAnchorRect: undefined,
+        placement: previousState.isPlacementAutoDetected ? undefined : previousState.placement,
+        isPlacementAutoDetected: previousState.isPlacementAutoDetected ? false : previousState.isPlacementAutoDetected,
+        statusMessage: previousState.isPlacementAutoDetected
+          ? 'Signature anchor not found automatically. Click on the PDF to place your signature.'
+          : previousState.statusMessage
+      }));
+      return;
+    }
+
+    // eslint-disable-next-line no-console
+    console.info('[SignatureAnchor] Anchor found:', anchorRect);
+
+    this.setState(previousState => ({
+      signatureAnchorRect: anchorRect,
+      placement: previousState.isPlacementAutoDetected !== false
+        ? getFittedPlacement(anchorRect, previousState.signatureAspectRatio, renderedWidth, renderedHeight)
+        : previousState.placement,
+      isPlacementAutoDetected: previousState.isPlacementAutoDetected !== false ? true : previousState.isPlacementAutoDetected,
+      statusMessage: previousState.isPlacementAutoDetected !== false
+        ? 'Signature position detected automatically.'
+        : previousState.statusMessage
+    }));
+  };
 
 
   // Return a readable error message from unknown error values.
@@ -1972,13 +2053,19 @@ export default class SignatureWebPart extends React.Component<ISignatureWebPartP
       const signatureDataUrl = uint8ArrayToDataUrl(bytes, 'image/png');
       const aspectRatio = await this._getImageAspectRatio(signatureDataUrl);
 
-      this.setState({
+      this.setState(previousState => ({
         isLoadingSavedSignature: false,
         savedSignatureDataUrl: signatureDataUrl,
         savedSignatureAspectRatio: aspectRatio,
         signatureDataUrl: signatureDataUrl,
-        signatureAspectRatio: aspectRatio
-      });
+        signatureAspectRatio: aspectRatio,
+        placement: previousState.signatureAnchorRect && previousState.isPlacementAutoDetected !== false
+          ? getFittedPlacement(previousState.signatureAnchorRect, aspectRatio, previousState.pageSize?.width || 0, previousState.pageSize?.height || 0)
+          : previousState.placement,
+        isPlacementAutoDetected: previousState.signatureAnchorRect && previousState.isPlacementAutoDetected !== false
+          ? true
+          : previousState.isPlacementAutoDetected
+      }));
     } catch (error) {
       this.setState({
         isLoadingSavedSignature: false,

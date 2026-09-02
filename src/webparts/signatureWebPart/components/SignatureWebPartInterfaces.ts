@@ -26,6 +26,38 @@ export interface IPdfPageSize {
   height: number;
 }
 
+// Canvas-pixel bounding box of a detected hidden signature anchor (e.g. "Sig_es_:signer1").
+export interface ISignatureAnchorRect {
+  pageIndex: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+export interface IPdfTextItem {
+  str: string;
+  transform: number[];
+  width: number;
+  height: number;
+}
+
+export interface IPdfTextContent {
+  items: IPdfTextItem[];
+}
+
+export interface IPdfViewport {
+  width: number;
+  height: number;
+  convertToViewportPoint(x: number, y: number): number[];
+}
+
+export interface IPdfPage {
+  getViewport(options: { scale: number }): IPdfViewport;
+  render(options: { canvasContext: CanvasRenderingContext2D; viewport: unknown }): { promise: Promise<void> };
+  getTextContent(): Promise<IPdfTextContent>;
+}
+
 export interface ISignatureWebPartState {
   fileName: string;
   pdfBytes?: Uint8Array;
@@ -34,6 +66,8 @@ export interface ISignatureWebPartState {
   currentPageIndex: number;
   pageSize?: IPdfPageSize;
   placement?: ISignaturePlacement;
+  signatureAnchorRect?: ISignatureAnchorRect;
+  isPlacementAutoDetected?: boolean;
   signatureDataUrl: string;
   signatureAspectRatio: number;
   signatureWidth: number;
